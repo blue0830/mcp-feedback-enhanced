@@ -183,7 +183,7 @@ class TestWebUIRoutes:
         from fastapi.testclient import TestClient
 
         # 創建會話
-        web_ui_manager.create_session(
+        session_id = web_ui_manager.create_session(
             str(test_project_dir), TestData.SAMPLE_SESSION["summary"]
         )
 
@@ -192,6 +192,7 @@ class TestWebUIRoutes:
 
         assert response.status_code == 200
         assert TestData.SAMPLE_SESSION["summary"] in response.text
+        assert session_id in response.text
 
     @pytest.mark.asyncio
     async def test_api_current_session(self, web_ui_manager, test_project_dir):

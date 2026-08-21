@@ -62,9 +62,9 @@ def setup_routes(manager: "WebUIManager"):
         if not current_session:
             # 沒有活躍會話時顯示等待頁面
             return manager.templates.TemplateResponse(
-                "index.html",
-                {
-                    "request": request,
+                request=request,
+                name="index.html",
+                context={
                     "title": "MCP Feedback Enhanced",
                     "has_session": False,
                     "version": __version__,
@@ -76,11 +76,12 @@ def setup_routes(manager: "WebUIManager"):
         layout_mode = load_user_layout_settings()
 
         return manager.templates.TemplateResponse(
-            "feedback.html",
-            {
-                "request": request,
+            request=request,
+            name="feedback.html",
+            context={
                 "project_directory": current_session.project_directory,
                 "summary": current_session.summary,
+                "session_id": current_session.session_id,
                 "title": "Interactive Feedback - 回饋收集",
                 "version": __version__,
                 "has_session": True,
