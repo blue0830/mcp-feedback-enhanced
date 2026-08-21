@@ -89,6 +89,17 @@ def setup_routes(manager: "WebUIManager"):
             },
         )
 
+    @manager.app.get("/health")
+    async def health():
+        """Lightweight health endpoint for desktop bootstrap checks."""
+        return JSONResponse(
+            content={
+                "status": "ok",
+                "has_session": manager.get_current_session() is not None,
+                "port": manager.port,
+            }
+        )
+
     @manager.app.get("/api/translations")
     async def get_translations():
         """獲取翻譯數據 - 從 Web 專用翻譯檔案載入"""

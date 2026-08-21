@@ -9,6 +9,7 @@ Web UI 主要管理類
 import asyncio
 import concurrent.futures
 import os
+import socket
 import threading
 import time
 import uuid
@@ -33,7 +34,17 @@ from .utils.port_manager import PortManager
 
 
 class WebUIManager:
-    """Web UI 管理器 - 重構為單一活躍會話模式"""
+    """Coordinate one in-process feedback runtime for web and desktop UIs.
+
+    Responsibilities:
+    - create and track feedback sessions in memory;
+    - host one FastAPI/uvicorn backend per process;
+    - expose browser/desktop launch helpers for the active session.
+
+    Limitations:
+    - state is process-local and not shared across processes;
+    - this manager is not a distributed multi-node session coordinator.
+    """
 
     def __init__(self, host: str = "127.0.0.1", port: int | None = None):
         # 確定偏好主機：環境變數 > 參數 > 預設值 127.0.0.1
@@ -91,8 +102,6 @@ class WebUIManager:
                         debug_log(f"自動切換到可用端口: {original_port} → {self.port}")
         elif preferred_port == 0:
             # 如果偏好端口為 0，使用系統自動分配
-            import socket
-
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind((self.host, 0))
                 self.port = s.getsockname()[1]
@@ -134,6 +143,9 @@ class WebUIManager:
         self.server_thread: threading.Thread | None = None
         self.server_process = None
         self.desktop_app_instance: Any = None  # 桌面應用實例引用
+        self._server_instance: uvicorn.Server | None = None
+        self._server_ready_event = threading.Event()
+        self._server_startup_error: Exception | None = None
 
         # 初始化標記，用於追蹤異步初始化狀態
         self._initialization_complete = False
@@ -479,52 +491,30 @@ class WebUIManager:
             debug_log(f"廣播消息失敗: {e}")
 
     def start_server(self):
-        """啟動 Web 伺服器（優化版本，支援並行初始化）"""
+        """啟動 Web 伺服器（支援動態端口與就緒檢測）"""
+        if self.server_thread and self.server_thread.is_alive():
+            return
+
+        self._server_ready_event.clear()
+        self._server_startup_error = None
 
         def run_server_with_retry():
             max_retries = 5
             retry_count = 0
-            original_port = self.port
+            start_port = self.port
 
             while retry_count < max_retries:
                 try:
-                    # 在嘗試啟動前先檢查端口是否可用
-                    if not PortManager.is_port_available(self.host, self.port):
+                    if self.port != 0 and not PortManager.is_port_available(
+                        self.host, self.port
+                    ):
                         debug_log(f"端口 {self.port} 已被佔用，自動尋找替代端口")
-
-                        # 查找占用端口的進程信息
-                        process_info = PortManager.find_process_using_port(self.port)
-                        if process_info:
-                            debug_log(
-                                f"端口 {self.port} 被進程 {process_info['name']} "
-                                f"(PID: {process_info['pid']}) 佔用"
-                            )
-
-                        # 自動尋找新端口
-                        try:
-                            new_port = PortManager.find_free_port_enhanced(
-                                preferred_port=self.port,
-                                auto_cleanup=False,  # 不自動清理其他進程
-                                host=self.host,
-                            )
-                            debug_log(f"自動切換端口: {self.port} → {new_port}")
-                            self.port = new_port
-                        except RuntimeError as port_error:
-                            error_id = ErrorHandler.log_error_with_context(
-                                port_error,
-                                context={
-                                    "operation": "端口查找",
-                                    "original_port": original_port,
-                                    "current_port": self.port,
-                                },
-                                error_type=ErrorType.NETWORK,
-                            )
-                            debug_log(
-                                f"無法找到可用端口 [錯誤ID: {error_id}]: {port_error}"
-                            )
-                            raise RuntimeError(
-                                f"無法找到可用端口，原始端口 {original_port} 被佔用"
-                            ) from port_error
+                        self.port = PortManager.find_free_port_enhanced(
+                            preferred_port=self.port,
+                            auto_cleanup=False,
+                            host=self.host,
+                        )
+                        debug_log(f"自動切換端口: {start_port} → {self.port}")
 
                     debug_log(
                         f"嘗試啟動伺服器在 {self.host}:{self.port} (嘗試 {retry_count + 1}/{max_retries})"
@@ -536,61 +526,55 @@ class WebUIManager:
                         port=self.port,
                         log_level="warning",
                         access_log=False,
+                        lifespan="off",
                     )
-
                     server_instance = uvicorn.Server(config)
+                    self._server_instance = server_instance
 
-                    # 創建事件循環並啟動服務器
-                    async def serve_with_async_init(server=server_instance):
-                        # 在服務器啟動的同時進行異步初始化
+                    async def serve_with_async_init(server: uvicorn.Server):
                         server_task = asyncio.create_task(server.serve())
                         init_task = asyncio.create_task(self._init_async_components())
 
-                        # 等待兩個任務完成
+                        while not server.started and not server.should_exit:
+                            await asyncio.sleep(0.05)
+
+                        if server.started:
+                            # If we requested port 0, read the actual runtime port from uvicorn.
+                            if self.port == 0 and getattr(server, "servers", None):
+                                try:
+                                    running_server = next(iter(server.servers))
+                                    sockets = getattr(running_server, "sockets", [])
+                                    if sockets:
+                                        self.port = sockets[0].getsockname()[1]
+                                        debug_log(
+                                            f"動態分配運行時端口: {self.port}"
+                                        )
+                                except Exception as port_error:
+                                    debug_log(f"讀取動態端口失敗: {port_error}")
+                            self._server_ready_event.set()
+
                         await asyncio.gather(
                             server_task, init_task, return_exceptions=True
                         )
 
-                    asyncio.run(serve_with_async_init())
-
-                    # 成功啟動，顯示最終使用的端口
-                    if self.port != original_port:
-                        debug_log(
-                            f"✅ 服務器成功啟動在替代端口 {self.port} (原端口 {original_port} 被佔用)"
-                        )
-
+                    asyncio.run(serve_with_async_init(server_instance))
+                    if not self._server_ready_event.is_set():
+                        self._server_ready_event.set()
                     break
 
                 except OSError as e:
-                    if e.errno in {
-                        10048,
-                        98,
-                    }:  # Windows: 10048, Linux: 98 (位址已在使用中)
-                        retry_count += 1
-                        if retry_count < max_retries:
-                            debug_log(
-                                f"端口 {self.port} 啟動失敗 (OSError)，嘗試下一個端口"
-                            )
-                            # 嘗試下一個端口
-                            self.port = self.port + 1
-                        else:
-                            debug_log("已達到最大重試次數，無法啟動伺服器")
-                            break
-                    else:
-                        # 使用統一錯誤處理
-                        error_id = ErrorHandler.log_error_with_context(
-                            e,
-                            context={
-                                "operation": "伺服器啟動",
-                                "host": self.host,
-                                "port": self.port,
-                            },
-                            error_type=ErrorType.NETWORK,
-                        )
-                        debug_log(f"伺服器啟動錯誤 [錯誤ID: {error_id}]: {e}")
+                    retry_count += 1
+                    if retry_count >= max_retries:
+                        self._server_startup_error = e
+                        self._server_ready_event.set()
                         break
+                    debug_log(f"端口啟動失敗，重試下一個端口: {e}")
+                    if self.port > 0:
+                        self.port += 1
+                    continue
                 except Exception as e:
-                    # 使用統一錯誤處理
+                    self._server_startup_error = e
+                    self._server_ready_event.set()
                     error_id = ErrorHandler.log_error_with_context(
                         e,
                         context={
@@ -603,12 +587,13 @@ class WebUIManager:
                     debug_log(f"伺服器運行錯誤 [錯誤ID: {error_id}]: {e}")
                     break
 
-        # 在新線程中啟動伺服器
         self.server_thread = threading.Thread(target=run_server_with_retry, daemon=True)
         self.server_thread.start()
 
-        # 等待伺服器啟動
-        time.sleep(2)
+        if not self._server_ready_event.wait(timeout=10):
+            raise RuntimeError("Web 服務器啟動超時")
+        if self._server_startup_error:
+            raise RuntimeError("Web 服務器啟動失敗") from self._server_startup_error
 
     def open_browser(self, url: str):
         """開啟瀏覽器"""
@@ -704,9 +689,13 @@ class WebUIManager:
             launch_desktop_app_func = import_desktop_app()
 
             # 啟動桌面應用程式
-            desktop_app = await launch_desktop_app_func()
+            desktop_app = await launch_desktop_app_func(
+                runtime_url=url, existing_web_manager=self
+            )
             # 保存桌面應用實例引用，以便後續控制
             self.desktop_app_instance = desktop_app
+            if hasattr(desktop_app, "is_running") and not desktop_app.is_running():
+                raise RuntimeError("桌面應用程式在啟動後立即退出")
             debug_log("桌面應用程式啟動成功")
             return True
 
@@ -717,6 +706,12 @@ class WebUIManager:
             return False
         except Exception as e:
             debug_log(f"桌面應用程式啟動失敗: {e}")
+            if self.desktop_app_instance:
+                try:
+                    self.desktop_app_instance.stop()
+                except Exception:
+                    pass
+                self.desktop_app_instance = None
             debug_log("回退到瀏覽器模式...")
             self.open_browser(url)
             return False
@@ -1061,6 +1056,14 @@ class WebUIManager:
         self.sessions.clear()
         self.current_session = None
 
+        if self.desktop_app_instance is not None:
+            try:
+                self.desktop_app_instance.stop()
+            except Exception as desktop_error:
+                debug_log(f"停止服務時關閉桌面應用失敗: {desktop_error}")
+            finally:
+                self.desktop_app_instance = None
+
         # 更新統計
         cleanup_duration = time.time() - cleanup_start_time
         self.cleanup_stats.update(
@@ -1082,6 +1085,17 @@ class WebUIManager:
         # 停止伺服器（注意：uvicorn 的 graceful shutdown 需要額外處理）
         if self.server_thread is not None and self.server_thread.is_alive():
             debug_log("正在停止 Web UI 服務")
+            if self._server_instance is not None:
+                self._server_instance.should_exit = True
+            self.server_thread.join(timeout=5)
+            if self.server_thread.is_alive():
+                debug_log("Web UI 服務停止超時，將由進程退出時回收")
+                if self._server_instance is not None:
+                    self._server_instance.force_exit = True
+                self.server_thread.join(timeout=2)
+
+        self._server_instance = None
+        self.server_thread = None
 
 
 # 全域實例
@@ -1097,7 +1111,11 @@ def get_web_ui_manager() -> WebUIManager:
 
 
 async def launch_web_feedback_ui(
-    project_directory: str, summary: str, timeout: int = 600
+    project_directory: str,
+    summary: str,
+    timeout: int = 600,
+    manager: WebUIManager | None = None,
+    prefer_desktop: bool = False,
 ) -> dict:
     """
     啟動 Web 回饋介面並等待用戶回饋 - 重構為使用根路徑
@@ -1110,7 +1128,7 @@ async def launch_web_feedback_ui(
     Returns:
         dict: 回饋結果，包含 logs、interactive_feedback 和 images
     """
-    manager = get_web_ui_manager()
+    manager = manager or get_web_ui_manager()
 
     # 創建新會話（每次AI調用都應該創建新會話）
     manager.create_session(project_directory, summary)
@@ -1125,11 +1143,12 @@ async def launch_web_feedback_ui(
 
     # 檢查是否為桌面模式
     desktop_mode = os.environ.get("MCP_DESKTOP_MODE", "").lower() == "true"
+    desktop_first = prefer_desktop or desktop_mode
 
     # 使用根路徑 URL
     feedback_url = manager.get_server_url()  # 直接使用根路徑
 
-    if desktop_mode:
+    if desktop_first:
         # 桌面模式：啟動桌面應用程式
         debug_log("檢測到桌面模式，啟動桌面應用程式...")
         has_active_tabs = await manager.launch_desktop_app(feedback_url)

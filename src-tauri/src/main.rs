@@ -1,8 +1,8 @@
 // Prevents additional console window on Windows in both debug and release, DO NOT REMOVE!!
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
-use tauri::{Builder, Manager};
 use std::sync::Mutex;
+use tauri::{Builder, Manager};
 
 // 全局狀態管理
 static APP_STATE: Mutex<Option<tauri::AppHandle>> = Mutex::new(None);
@@ -43,26 +43,35 @@ fn main() {
     env_logger::init();
 
     println!("正在啟動 MCP Feedback Enhanced 桌面應用程式...");
+    let runtime_web_url = std::env::var("MCP_WEB_URL").unwrap_or_default();
+    let runtime_desktop_mode = std::env::var("MCP_DESKTOP_MODE")
+        .map(|value| matches!(value.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on"))
+        .unwrap_or(false);
 
     // 創建 Tauri 應用程式
     Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(AppState::default())
-        .setup(|app| {
+        .manage(AppState {
+            web_url: runtime_web_url.clone(),
+            desktop_mode: runtime_desktop_mode,
+        })
+        .setup(move |app| {
             // 儲存應用程式句柄到全局狀態
             {
                 let mut state = APP_STATE.lock().unwrap();
                 *state = Some(app.handle().clone());
             }
 
-            // 檢查是否有 MCP_WEB_URL 環境變數
-            if let Ok(web_url) = std::env::var("MCP_WEB_URL") {
+            if !runtime_web_url.is_empty() {
+                let web_url = runtime_web_url.clone();
                 println!("檢測到 Web URL: {}", web_url);
 
                 // 獲取主視窗並導航到 Web URL
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.navigate(web_url.parse().unwrap());
                 }
+            } else {
+                println!("未提供 MCP_WEB_URL，保留在桌面啟動畫面");
             }
 
             println!("Tauri 應用程式已初始化");

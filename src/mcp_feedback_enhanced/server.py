@@ -360,6 +360,47 @@ def create_feedback_text(feedback_data: dict) -> str:
     return "\n\n".join(text_parts) if text_parts else "用戶未提供任何回饋內容。"
 
 
+def normalize_feedback_result(result: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalize feedback payload fields across MCP and CLI call paths."""
+    if not isinstance(result, dict):
+        return {
+            "command_logs": "",
+            "interactive_feedback": "",
+            "images": [],
+            "settings": {},
+        }
+
+    normalized = dict(result)
+    command_logs = normalized.get("command_logs", normalized.get("logs", ""))
+    if isinstance(command_logs, list):
+        command_logs = "\n".join(str(item) for item in command_logs)
+    elif command_logs is None:
+        command_logs = ""
+    else:
+        command_logs = str(command_logs)
+
+    interactive_feedback = normalized.get("interactive_feedback", "")
+    if interactive_feedback is None:
+        interactive_feedback = ""
+    else:
+        interactive_feedback = str(interactive_feedback)
+
+    images = normalized.get("images", [])
+    if not isinstance(images, list):
+        images = []
+
+    settings = normalized.get("settings", {})
+    if not isinstance(settings, dict):
+        settings = {}
+
+    return {
+        "command_logs": command_logs,
+        "interactive_feedback": interactive_feedback,
+        "images": images,
+        "settings": settings,
+    }
+
+
 def process_images(images_data: list[dict]) -> list[MCPImage]:
     """
     處理圖片資料，轉換為 MCP 圖片對象
@@ -468,30 +509,31 @@ async def interactive_feedback(
         debug_log("回饋模式: web")
 
         result = await launch_web_feedback_ui(project_directory, summary, timeout)
+        normalized_result = normalize_feedback_result(result)
 
         # 處理取消情況
         if not result:
             return [TextContent(type="text", text="用戶取消了回饋。")]
 
         # 儲存詳細結果
-        save_feedback_to_file(result)
+        save_feedback_to_file(normalized_result)
 
         # 建立回饋項目列表
         feedback_items = []
 
         # 添加文字回饋
         if (
-            result.get("interactive_feedback")
-            or result.get("command_logs")
-            or result.get("images")
+            normalized_result.get("interactive_feedback")
+            or normalized_result.get("command_logs")
+            or normalized_result.get("images")
         ):
-            feedback_text = create_feedback_text(result)
+            feedback_text = create_feedback_text(normalized_result)
             feedback_items.append(TextContent(type="text", text=feedback_text))
             debug_log("文字回饋已添加")
 
         # 添加圖片回饋
-        if result.get("images"):
-            mcp_images = process_images(result["images"])
+        if normalized_result.get("images"):
+            mcp_images = process_images(normalized_result["images"])
             # 修復 arg-type 錯誤 - 直接擴展列表
             feedback_items.extend(mcp_images)
             debug_log(f"已添加 {len(mcp_images)} 張圖片")

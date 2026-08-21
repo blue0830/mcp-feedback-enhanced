@@ -86,73 +86,92 @@
     <script>
         // 檢測是否在 Tauri 環境中
         const isTauri = window.__TAURI__ !== undefined;
-        
-        // 後端服務 URL
-        const backendUrl = 'http://127.0.0.1:8765';
-        
-        // 狀態更新函數
+        let backendUrl = '';
+
         function updateStatus(message) {
             document.getElementById('status').textContent = message;
         }
-        
-        // 錯誤顯示函數
+
         function showError(message) {
             const errorDiv = document.getElementById('error');
             errorDiv.textContent = message;
             errorDiv.style.display = 'block';
         }
-        
-        // 檢查後端服務是否可用
+
+        async function resolveBackendUrl() {
+            const params = new URLSearchParams(window.location.search);
+            const queryUrl = params.get('backend');
+            if (queryUrl) {
+                return queryUrl;
+            }
+
+            if (isTauri && window.__TAURI__?.core?.invoke) {
+                try {
+                    const runtimeUrl = await window.__TAURI__.core.invoke('get_web_url');
+                    if (runtimeUrl && typeof runtimeUrl === 'string') {
+                        return runtimeUrl;
+                    }
+                } catch (error) {
+                    console.error('無法透過 Tauri 讀取後端 URL:', error);
+                }
+            }
+
+            return '';
+        }
+
         async function checkBackendService() {
+            if (!backendUrl) {
+                showError('找不到後端 URL，請重新啟動桌面應用程式');
+                return;
+            }
+
             try {
                 updateStatus('正在檢查後端服務...');
-                const response = await fetch(backendUrl + '/health', {
+                const controller = new AbortController();
+                const timeoutHandle = setTimeout(() => controller.abort(), 5000);
+                const response = await fetch(`${backendUrl}/health`, {
                     method: 'GET',
-                    timeout: 5000
+                    signal: controller.signal
                 });
-                
-                if (response.ok) {
-                    updateStatus('後端服務已就緒，正在載入界面...');
-                    // 延遲一下再重定向，讓用戶看到狀態
-                    setTimeout(() => {
-                        window.location.href = backendUrl;
-                    }, 1000);
-                } else {
+                clearTimeout(timeoutHandle);
+
+                if (!response.ok) {
                     throw new Error(`後端服務回應錯誤: ${response.status}`);
                 }
+
+                updateStatus('後端服務已就緒，正在載入界面...');
+                setTimeout(() => {
+                    window.location.href = backendUrl;
+                }, 500);
             } catch (error) {
                 console.error('檢查後端服務失敗:', error);
                 updateStatus('正在重試連接...');
-                
-                // 如果是網路錯誤，直接嘗試重定向
-                if (error.name === 'TypeError' || error.message.includes('fetch')) {
-                    setTimeout(() => {
-                        window.location.href = backendUrl;
-                    }, 2000);
-                } else {
-                    showError('無法連接到後端服務，請確保服務正在運行');
-                }
+                setTimeout(() => {
+                    window.location.href = backendUrl;
+                }, 1000);
             }
         }
-        
-        // 如果不是 Tauri 環境，直接重定向
-        if (!isTauri) {
-            updateStatus('正在重定向到 Web 界面...');
+
+        (async () => {
+            backendUrl = await resolveBackendUrl();
+            if (!backendUrl) {
+                showError('桌面模式缺少後端 URL，請確認啟動流程是否正確');
+                return;
+            }
+
+            if (!isTauri) {
+                updateStatus('正在重定向到 Web 界面...');
+                window.location.href = backendUrl;
+                return;
+            }
+
+            setTimeout(checkBackendService, 500);
             setTimeout(() => {
-                window.location.href = backendUrl;
-            }, 1000);
-        } else {
-            // Tauri 環境中，檢查後端服務
-            setTimeout(checkBackendService, 1000);
-        }
-        
-        // 如果 5 秒後還沒有重定向，強制重定向
-        setTimeout(() => {
-            if (window.location.href.includes('index.html')) {
-                updateStatus('強制重定向到後端服務...');
-                window.location.href = backendUrl;
-            }
-        }, 5000);
+                if (window.location.href.includes('index.html')) {
+                    window.location.href = backendUrl;
+                }
+            }, 5000);
+        })();
     </script>
 </body>
 </html>

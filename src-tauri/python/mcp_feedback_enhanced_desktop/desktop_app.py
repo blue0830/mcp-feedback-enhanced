@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-桌面應用程式主要模組
+Desktop launcher integration for MCP Feedback Enhanced.
 
-此模組提供桌面應用程式的核心功能，包括：
-- 桌面模式檢測
-- Tauri 應用程式啟動
-- 與現有 Web UI 的整合
+This module starts/stops the packaged Tauri desktop app and keeps lifecycle
+behavior explicit for CLI and MCP call paths.
 """
 
 import asyncio
 import os
+import signal
+import subprocess
 import sys
 import time
+from pathlib import Path
 
 
 # 導入現有的 MCP Feedback Enhanced 模組
@@ -24,12 +25,23 @@ except ImportError as e:
 
 
 class DesktopApp:
-    """桌面應用程式管理器"""
+    """Manage one desktop UI process for a single feedback runtime.
+
+    Responsibilities:
+    - start the Tauri binary with runtime URL injection;
+    - track process health and expose liveness checks;
+    - stop the process with bounded graceful/forced cleanup.
+
+    Limitations:
+    - this class only manages one desktop process at a time;
+    - it does not own the feedback session or backend server lifecycle.
+    """
 
     def __init__(self):
         self.web_manager: WebUIManager | None = None
         self.desktop_mode = False
-        self.app_handle = None
+        self.app_handle: subprocess.Popen | None = None
+        self._runtime_url: str | None = None
 
     def set_desktop_mode(self, enabled: bool = True):
         """設置桌面模式"""
@@ -104,10 +116,6 @@ class DesktopApp:
     async def launch_tauri_app(self, server_url: str):
         """啟動 Tauri 桌面應用程式"""
         debug_log("正在啟動 Tauri 桌面視窗...")
-
-        import os
-        import subprocess
-        from pathlib import Path
 
         # 找到 Tauri 可執行檔案
         # 首先嘗試從打包後的位置找（PyPI 安裝後的位置）
@@ -214,25 +222,51 @@ class DesktopApp:
         env = os.environ.copy()
         env["MCP_DESKTOP_MODE"] = "true"
         env["MCP_WEB_URL"] = server_url
+        self._runtime_url = server_url
 
         # 啟動 Tauri 應用程式
         try:
             # Windows 下隱藏控制台視窗
             creation_flags = 0
             if os.name == "nt":
-                creation_flags = subprocess.CREATE_NO_WINDOW
+                creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+                creation_flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+
+            stdout_target = (
+                None
+                if os.getenv("MCP_DEBUG", "").lower() in ("true", "1", "yes", "on")
+                else subprocess.DEVNULL
+            )
+            stderr_target = (
+                None
+                if os.getenv("MCP_DEBUG", "").lower() in ("true", "1", "yes", "on")
+                else subprocess.DEVNULL
+            )
+
+            popen_kwargs = {
+                "env": env,
+                "stdout": stdout_target,
+                "stderr": stderr_target,
+            }
+            if os.name == "nt":
+                popen_kwargs["creationflags"] = creation_flags
+            else:
+                popen_kwargs["start_new_session"] = True
 
             self.app_handle = subprocess.Popen(
                 [str(tauri_exe)],
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                creationflags=creation_flags,
+                **popen_kwargs,
             )
             debug_log("Tauri 桌面應用程式已啟動")
 
             # 等待一下確保應用程式啟動
             await asyncio.sleep(2)
+
+            if self.app_handle.poll() is not None:
+                exit_code = self.app_handle.returncode
+                raise RuntimeError(
+                    f"桌面應用程式在啟動階段異常退出，exit code={exit_code}"
+                )
 
         except Exception as e:
             debug_log(f"啟動 Tauri 應用程式失敗: {e}")
@@ -245,15 +279,16 @@ class DesktopApp:
         # 停止 Tauri 應用程式
         if self.app_handle:
             try:
-                self.app_handle.terminate()
-                self.app_handle.wait(timeout=5)
-                debug_log("Tauri 應用程式已停止")
+                if self.app_handle.poll() is None:
+                    self.app_handle.terminate()
+                    self.app_handle.wait(timeout=3)
+                    debug_log("Tauri 應用程式已優雅停止")
             except Exception as e:
                 debug_log(f"停止 Tauri 應用程式時發生錯誤: {e}")
                 try:
-                    self.app_handle.kill()
-                except:
-                    pass
+                    self._terminate_process_tree(force=True)
+                except Exception as force_error:
+                    debug_log(f"強制停止桌面進程失敗: {force_error}")
             finally:
                 self.app_handle = None
 
@@ -266,8 +301,57 @@ class DesktopApp:
         # self.set_desktop_mode(False)  # 註釋掉這行
         debug_log("桌面應用程式已停止")
 
+    def is_running(self) -> bool:
+        """Return True when desktop child process is still alive."""
+        return self.app_handle is not None and self.app_handle.poll() is None
 
-async def launch_desktop_app(test_mode: bool = False) -> DesktopApp:
+    def _terminate_process_tree(self, force: bool = False):
+        """Terminate desktop child process tree with platform-aware strategy."""
+        if not self.app_handle:
+            return
+
+        process = self.app_handle
+        if process.poll() is not None:
+            return
+
+        if os.name == "nt":
+            signal_name = "SIGKILL" if force else "SIGTERM"
+            try:
+                command = ["taskkill", "/PID", str(process.pid), "/T"]
+                if force:
+                    command.append("/F")
+                subprocess.run(
+                    command,
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                debug_log(
+                    f"已使用 taskkill ({signal_name}) 終止桌面進程樹 PID={process.pid}"
+                )
+            except Exception as taskkill_error:
+                debug_log(f"taskkill 失敗，回退到本地終止: {taskkill_error}")
+                if force:
+                    process.kill()
+                else:
+                    process.terminate()
+        else:
+            try:
+                target_signal = signal.SIGKILL if force else signal.SIGTERM
+                os.killpg(process.pid, target_signal)
+            except Exception as group_error:
+                debug_log(f"進程組終止失敗，回退到單進程終止: {group_error}")
+                if force:
+                    process.kill()
+                else:
+                    process.terminate()
+
+
+async def launch_desktop_app(
+    test_mode: bool = False,
+    runtime_url: str | None = None,
+    existing_web_manager: WebUIManager | None = None,
+) -> DesktopApp:
     """啟動桌面應用程式
 
     Args:
@@ -278,8 +362,16 @@ async def launch_desktop_app(test_mode: bool = False) -> DesktopApp:
     app = DesktopApp()
 
     try:
-        # 啟動 Web 後端
-        server_url = await app.start_web_backend()
+        if existing_web_manager is not None:
+            app.web_manager = existing_web_manager
+            app.set_desktop_mode(True)
+            server_url = runtime_url or existing_web_manager.get_server_url()
+        elif runtime_url:
+            app.set_desktop_mode(True)
+            server_url = runtime_url
+        else:
+            # 啟動 Web 後端
+            server_url = await app.start_web_backend()
 
         if test_mode:
             # 測試模式：創建測試會話
