@@ -3,8 +3,8 @@
 
 Responsibilities:
 - serve the endpoints the Discord remote provider uses (bot identity, channel lookup,
-  forum post creation, message listing/creation/editing, thread archiving) on a local
-  ephemeral port, recording every request;
+  forum post creation, text-channel thread creation, message listing/creation/editing,
+  thread archiving) on a local ephemeral port, recording every request;
 - serve attachment downloads with configurable behavior (redirects, errors, big bodies);
 - inject failures (429, 5xx, 401, 403) into matching requests.
 
@@ -32,6 +32,8 @@ BOT_TOKEN = ".".join(
 )
 BOT_ID = "900000000000000001"
 FORUM_ID = "800000000000000001"
+TEXT_CHANNEL_ID = "800000000000000002"
+VOICE_CHANNEL_ID = "800000000000000003"
 ALLOWED_USER = "700000000000000001"
 OTHER_USER = "700000000000000002"
 _FIRST_ID = 1_100_000_000_000_000_000
@@ -74,9 +76,15 @@ class Attachment:
 class FakeDiscord:
     """A local fake of Discord (REST under ``/api/v10``, CDN under ``/cdn``)."""
 
-    def __init__(self, token: str = BOT_TOKEN, forum_type: int = 15) -> None:
+    def __init__(self, token: str = BOT_TOKEN) -> None:
         self.token = token
-        self.forum_type = forum_type
+        # Channels the bot can look up: a forum, an ordinary text channel and a voice
+        # channel (which cannot host a conversation).
+        self.channels: dict[str, dict[str, Any]] = {
+            FORUM_ID: {"id": FORUM_ID, "type": 15, "name": "feedback-forum"},
+            TEXT_CHANNEL_ID: {"id": TEXT_CHANNEL_ID, "type": 0, "name": "feedback"},
+            VOICE_CHANNEL_ID: {"id": VOICE_CHANNEL_ID, "type": 2, "name": "voice"},
+        }
         self.requests: list[Recorded] = []
         self.threads: dict[str, dict[str, Any]] = {}
         self.attachments: dict[str, Attachment] = {}
@@ -184,7 +192,15 @@ class FakeDiscord:
         return meta
 
     def last_thread_id(self) -> str | None:
-        return next(reversed(self.threads), None)
+        """Id of the newest thread that already holds its first message."""
+        return next(
+            (
+                id_
+                for id_, thread in reversed(self.threads.items())
+                if thread["messages"]
+            ),
+            None,
+        )
 
     def calls(self, method: str, pattern: str) -> list[Recorded]:
         """Recorded API requests matching ``method`` and a regex on the path."""
@@ -281,16 +297,13 @@ class FakeDiscord:
     def _channel(
         self, method: str, channel_id: str, recorded: Recorded
     ) -> web.Response:
-        if method == "GET" and channel_id == FORUM_ID:
-            return web.json_response(
-                {
-                    "id": FORUM_ID,
-                    "type": self.forum_type,
-                    "name": "feedback",
-                    "available_tags": self.available_tags,
-                    "flags": 16 if self.require_tag else 0,
-                }
-            )
+        channel = self.channels.get(channel_id)
+        if method == "GET" and channel is not None:
+            body = dict(channel)
+            if channel["type"] == 15:
+                body["available_tags"] = self.available_tags
+                body["flags"] = 16 if self.require_tag else 0
+            return web.json_response(body)
         thread = self.threads.get(channel_id)
         if thread is None:
             return web.json_response(
@@ -303,11 +316,44 @@ class FakeDiscord:
             return web.json_response({"id": channel_id, "archived": thread["archived"]})
         return web.json_response({"id": channel_id, "type": 11})
 
-    def _create_post(self, forum_id: str, recorded: Recorded) -> web.Response:
-        if forum_id != FORUM_ID:
+    def _create_post(self, channel_id: str, recorded: Recorded) -> web.Response:
+        channel = self.channels.get(channel_id)
+        if channel is None:
             return web.json_response(
                 {"message": "Unknown Channel", "code": 10003}, status=404
             )
+        if channel["type"] == 15:
+            return self._create_forum_post(recorded)
+        if channel["type"] == 0:
+            return self._create_text_thread(recorded)
+        return web.json_response(
+            {"message": "Cannot execute action on this channel type", "code": 50024},
+            status=400,
+        )
+
+    def _create_text_thread(self, recorded: Recorded) -> web.Response:
+        """A public thread without a starter message (the only kind the provider uses)."""
+        body = recorded.json or {}
+        # API v10 needs an explicit thread type, and a message can only be nested in a
+        # forum post: either mistake is rejected so a provider bug cannot go unnoticed.
+        if body.get("type") != 11 or "message" in body:
+            return web.json_response(
+                {"message": "Invalid Form Body", "code": 50035}, status=400
+            )
+        thread_id = self.new_id()
+        self.threads[thread_id] = {
+            "name": body.get("name"),
+            "auto_archive_duration": body.get("auto_archive_duration"),
+            "applied_tags": None,
+            "archived": False,
+            "messages": [],
+            "request": recorded,
+        }
+        return web.json_response(
+            {"id": thread_id, "type": 11, "name": body.get("name")}
+        )
+
+    def _create_forum_post(self, recorded: Recorded) -> web.Response:
         body = recorded.json or {}
         if self.require_tag and not body.get("applied_tags"):
             return web.json_response(
@@ -356,6 +402,7 @@ class FakeDiscord:
             "id": self.new_id(),
             "type": 19 if body.get("message_reference") else 0,
             "content": body.get("content", ""),
+            "embeds": body.get("embeds", []),
             "author": {"id": BOT_ID, "bot": True, "username": "testbot"},
             "attachments": [],
             "request": body,

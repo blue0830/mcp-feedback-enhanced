@@ -33,7 +33,7 @@ from mcp_feedback_enhanced.web.routes import remote_routes
 
 
 BOT_TOKEN = "fake-bot-token-abcdefghijklmnop"  # noqa: S105
-FORUM_ID = "123456789012345678"
+CHANNEL_ID = "123456789012345678"
 USER_ID = "223456789012345678"
 LOCAL_BASE = "http://127.0.0.1"
 
@@ -41,7 +41,7 @@ COMPLETE_SETTINGS: dict[str, Any] = {
     "provider": "discord",
     "discord": {
         "token": BOT_TOKEN,
-        "forum_channel_id": FORUM_ID,
+        "channel_id": CHANNEL_ID,
         "allowed_user_ids": [USER_ID],
     },
 }
@@ -228,7 +228,7 @@ def test_cross_site_text_plain_post_is_refused_and_changes_nothing(remote_env):
 
     response = remote_env.client.post(
         "/api/remote-config",
-        content=f'{{"enabled": false, "discord": {{"forum_channel_id": "{FORUM_ID}"}}}}',
+        content=f'{{"enabled": false, "discord": {{"channel_id": "{CHANNEL_ID}"}}}}',
         headers={
             "Content-Type": "text/plain",
             "Origin": "http://evil.example.com",
@@ -371,7 +371,7 @@ def test_default_configuration_is_disabled_and_reports_no_token(remote_env):
     assert config["providers"] == ["discord"]
     assert config["discord"] == {
         "token_set": False,
-        "forum_channel_id": "",
+        "channel_id": "",
         "allowed_user_ids": [],
     }
 
@@ -392,13 +392,13 @@ def test_saving_without_a_token_keeps_the_stored_one(remote_env):
 
     response = remote_env.client.post(
         "/api/remote-config",
-        json={"discord": {"forum_channel_id": "323456789012345678"}},
+        json={"discord": {"channel_id": "323456789012345678"}},
     )
 
     assert response.status_code == 200
     stored = remote_env.store.load()
     assert stored.discord.token == BOT_TOKEN
-    assert stored.discord.forum_channel_id == "323456789012345678"
+    assert stored.discord.channel_id == "323456789012345678"
 
 
 def test_enabling_is_refused_until_the_settings_were_verified(remote_env):
@@ -416,7 +416,7 @@ def test_enabling_is_refused_without_an_allowlist(remote_env):
         "/api/remote-config",
         json={
             "enabled": True,
-            "discord": {"token": BOT_TOKEN, "forum_channel_id": FORUM_ID},
+            "discord": {"token": BOT_TOKEN, "channel_id": CHANNEL_ID},
         },
     )
 
@@ -431,7 +431,7 @@ def test_enabling_is_refused_without_an_allowlist(remote_env):
         ({"provider": "telegram"}, "unsupported_provider"),
         ({"discord": {"token": "short"}}, "invalid_token"),
         ({"discord": {"token": "has a space inside it"}}, "invalid_token"),
-        ({"discord": {"forum_channel_id": "not-a-snowflake"}}, "invalid_channel_id"),
+        ({"discord": {"channel_id": "not-a-snowflake"}}, "invalid_channel_id"),
         ({"discord": {"allowed_user_ids": ["nope"]}}, "invalid_user_id"),
         ({"discord": {"allowed_user_ids": 12}}, "invalid_user_id"),
         ({"discord": "oops"}, "invalid_payload"),
@@ -590,7 +590,7 @@ def test_settings_changed_during_a_check_are_not_marked_as_verified(remote_env):
 
     remote_env.client.post(
         "/api/remote-config",
-        json={"discord": {"forum_channel_id": "323456789012345678"}},
+        json={"discord": {"channel_id": "323456789012345678"}},
     )
     gate.set()
     finished = wait_until_done(remote_env.client, started.json()["run_id"])
@@ -607,7 +607,7 @@ def test_settings_changed_during_a_check_are_not_marked_as_verified(remote_env):
         ({}, "token_required"),
         ({"discord": {"token": BOT_TOKEN}}, "channel_required"),
         (
-            {"discord": {"token": BOT_TOKEN, "forum_channel_id": FORUM_ID}},
+            {"discord": {"token": BOT_TOKEN, "channel_id": CHANNEL_ID}},
             "allowlist_required",
         ),
     ],

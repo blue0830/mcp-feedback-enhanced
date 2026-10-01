@@ -66,7 +66,7 @@ DOCUMENTED_REASONS = {
     "bad_request",
     "bad_response",
     "not_open",
-    "not_forum",
+    "unsupported_channel",
     "timeout",
     "message_content",
     "no_text",
@@ -100,7 +100,7 @@ DOCUMENTED_REASONS = {
 SCAN_SENTINELS = {
     "auth_failed",  # reason="..."
     "too_large",  # REASON_... constants
-    "not_forum",  # check.fail(step, "...")
+    "unsupported_channel",  # check.fail(step, "...")
     "cancelled",  # check.fail_running("...")
     "submit_failed",  # RemoteState.UNAVAILABLE, "..."
     "invalid_token",  # ConfigError("...")

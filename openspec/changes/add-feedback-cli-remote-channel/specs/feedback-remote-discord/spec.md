@@ -1,12 +1,25 @@
 ## ADDED Requirements
 
-### Requirement: One forum post per session
-The Discord provider MUST create one post in the configured forum channel per session. The title MUST follow `[<project dir name>] <summary first line> (#<short session id>)` truncated to 100 characters. The first message MUST carry the summary, project directory, short session id, deadline and reply instructions.
+### Requirement: One thread per session
+The Discord provider MUST start one thread per session in the configured channel, chosen by the channel type: a post in a forum channel, a public thread in an ordinary text channel. Any other channel type MUST be rejected as a permanent failure (`unsupported_channel`) before anything is created. The title MUST follow `[<project dir name>] <summary first line> (#<short session id>)` truncated to 100 characters. The first message MUST carry the summary, project directory, short session id, deadline and reply instructions.
 
-#### Scenario: Post creation
-- **WHEN** the provider opens a conversation for a session
-- **THEN** it creates a forum post with the title format above and a first message containing the summary, project directory, short session id, deadline and instructions stating that the first message in the post is the final reply
+#### Scenario: Forum post creation
+- **WHEN** the provider opens a conversation for a session and the channel is a forum channel
+- **THEN** it creates a forum post with the title format above and a first message containing the summary, project directory, short session id, deadline and instructions stating that the first message in the thread is the final reply
 - **THEN** the post is created with an auto-archive duration of 1440 minutes
+
+#### Scenario: Text channel thread creation
+- **WHEN** the provider opens a conversation for a session and the channel is an ordinary text channel
+- **THEN** it creates a public thread without a starter message, named with the title format above and with an auto-archive duration of 1440 minutes
+- **THEN** it posts the first message inside that thread (the same content as for a forum post, including the `summary.md` attachment when needed), and replies are read after that message
+
+#### Scenario: Unsupported channel
+- **WHEN** the configured channel is neither a text channel nor a forum channel (for example a voice channel)
+- **THEN** opening fails permanently with the reason `unsupported_channel` and nothing is created
+
+#### Scenario: First message cannot be posted
+- **WHEN** a thread was created in a text channel but posting the first message fails
+- **THEN** the empty thread is archived on a best-effort basis and the failure is reported
 
 #### Scenario: Summary exceeds embed capacity
 - **WHEN** the summary is longer than 4000 characters
@@ -21,7 +34,7 @@ The first message MUST mention each allowlisted user so that a push notification
 - **THEN** those mentions are not parsed and notify nobody
 
 ### Requirement: HTTP polling without Gateway or resident process
-The provider MUST receive replies by polling the post's messages over HTTP with a cursor, and MUST NOT open a Discord Gateway connection or depend on any resident background process.
+The provider MUST receive replies by polling the thread's messages over HTTP with a cursor, and MUST NOT open a Discord Gateway connection or depend on any resident background process.
 
 #### Scenario: Polling cursor
 - **WHEN** the provider polls for replies
@@ -29,19 +42,19 @@ The provider MUST receive replies by polling the post's messages over HTTP with 
 - **THEN** messages with ids not greater than the cursor are never processed again
 
 #### Scenario: Concurrent processes
-- **WHEN** several CLI processes poll their own posts at the same time
+- **WHEN** several CLI processes poll their own threads at the same time
 - **THEN** no process depends on or interferes with another
 
 ### Requirement: Authorized reply recognition
 The provider MUST accept a message as the final reply only when its author is in the allowlist, the author is not a bot, the message is a normal message or a reply, and its usable text is non-empty. Usable text is the trimmed message text followed by the content of its text attachments, joined by a blank line. All other messages MUST be ignored without ending the session.
 
 #### Scenario: First authorized message
-- **WHEN** an allowlisted user posts a text message in the post
+- **WHEN** an allowlisted user posts a text message in the thread
 - **THEN** the provider immediately replies with a receipt message
 - **THEN** the usable text is submitted as the final reply of the session
 
 #### Scenario: Unauthorized author
-- **WHEN** a user who is not in the allowlist posts in the post
+- **WHEN** a user who is not in the allowlist posts in the thread
 - **THEN** the message is ignored and the session keeps waiting
 
 #### Scenario: No usable text
@@ -82,7 +95,7 @@ The provider MUST read the text attachments of an authorized message as part of 
 - **THEN** the provider posts a hint asking the user to resend, keeps waiting, and does not stop polling for the session
 
 ### Requirement: Rate limit and error handling
-The provider MUST honor rate limit response headers and `Retry-After`, MUST use a connect timeout of 5 seconds and a total timeout of 10 seconds per request, MUST read proxy settings from the environment, and MUST stop all requests for the session after a Discord API request returns 401 or 403. Attachment downloads from the CDN are not Discord API requests and are governed by the text attachment requirement.
+The provider MUST honor rate limit response headers and `Retry-After`, MUST use a connect timeout of 10 seconds and a total timeout of 30 seconds per request (a slow proxy can stall a request for about 10 seconds and still deliver it), MUST read proxy settings from the environment, and MUST stop all requests for the session after a Discord API request returns 401 or 403. Attachment downloads from the CDN are not Discord API requests and are governed by the text attachment requirement.
 
 #### Scenario: Rate limited
 - **WHEN** a Discord API request returns 429
@@ -97,19 +110,19 @@ The provider MUST honor rate limit response headers and `Retry-After`, MUST use 
 - **THEN** the provider retries with exponential backoff capped at 30 seconds
 
 ### Requirement: Outcome marking and archive
-On close, the provider MUST edit the first message to show the final outcome, MUST post a short explanation message when the outcome is not a remote reply, and MUST archive the post. It MUST NOT depend on sending to an archived post.
+On close, the provider MUST edit the first message to show the final outcome, MUST post a short explanation message when the outcome is not a remote reply, and MUST archive the thread. It MUST NOT depend on sending to an archived thread. Archiving MUST NOT require the Manage Threads permission (a bot may archive the threads it created), and the provider MUST NOT try to delete threads.
 
 #### Scenario: Answered remotely
 - **WHEN** the session ended with a remote reply
-- **THEN** the first message shows the answered-remotely outcome and the post is archived
+- **THEN** the first message shows the answered-remotely outcome and the thread is archived
 
 #### Scenario: Answered locally
 - **WHEN** the session ended with a local submission
-- **THEN** the first message shows the answered-locally outcome, a short note is posted, and the post is archived
+- **THEN** the first message shows the answered-locally outcome, a short note is posted, and the thread is archived
 
 #### Scenario: Timeout
 - **WHEN** the session ended by timeout
-- **THEN** the first message shows the timeout outcome and the post is archived
+- **THEN** the first message shows the timeout outcome and the thread is archived
 
 ### Requirement: Liveness refresh in the first message
 While waiting, the provider MUST edit the first message about once per minute to update the last-alive timestamp, and MUST ignore edit failures.

@@ -105,7 +105,7 @@
                 toggle: root.querySelector('#remoteEnableToggle'),
                 provider: root.querySelector('#remoteProvider'),
                 token: root.querySelector('#remoteToken'),
-                channel: root.querySelector('#remoteForumChannelId'),
+                channel: root.querySelector('#remoteChannelId'),
                 users: root.querySelector('#remoteAllowedUsers'),
                 save: root.querySelector('#remoteSaveBtn'),
                 test: root.querySelector('#remoteTestBtn'),
@@ -192,7 +192,7 @@
 
         collectPayload() {
             const discord = {
-                forum_channel_id: this.el.channel.value.trim(),
+                channel_id: this.el.channel.value.trim(),
                 // The server accepts a comma/space separated string and validates each id.
                 allowed_user_ids: this.el.users.value.trim()
             };
@@ -295,7 +295,7 @@
         applyConfig(config) {
             this.config = config;
             this.el.provider.value = config.provider;
-            this.el.channel.value = config.discord.forum_channel_id || '';
+            this.el.channel.value = config.discord.channel_id || '';
             this.el.users.value = (config.discord.allowed_user_ids || []).join(', ');
             // The token never comes back from the server: the field always starts empty.
             this.el.token.value = '';
@@ -412,7 +412,7 @@
             }
             const discord = config.discord;
             const complete = Boolean(
-                discord.token_set && discord.forum_channel_id && discord.allowed_user_ids.length > 0
+                discord.token_set && discord.channel_id && discord.allowed_user_ids.length > 0
             );
 
             let state;

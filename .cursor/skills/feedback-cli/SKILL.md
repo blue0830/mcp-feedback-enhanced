@@ -113,14 +113,17 @@ editable project environment; it is not the global invocation path.
 
 ## Remote Communication
 
-The user may mirror feedback requests to a private Discord forum post (setup:
-`docs/en/remote-channel.md`). This does not change how you call `feedback-cli`:
+The user may mirror feedback requests to a private Discord thread, opened in a
+text channel or a forum channel (setup: `docs/en/remote-channel.md`). This does
+not change how you call `feedback-cli`:
 
 - Use the same foreground, blocking invocation with the same parameters. There
   is no flag to turn the remote channel on or off for a call, and none is needed.
 - A reply from the remote channel ends the command exactly like a local
   submission (same output format, same exit code). Treat it as ordinary user
-  feedback.
+  feedback. The command may keep running for up to about 20 seconds after the
+  reply while the remote thread is closed on a slow connection; wait for it to
+  end instead of interrupting it.
 - It does not extend any timeout. The outer tool timeout and the CLI timeout
   still apply, and the no-retry and no-background rules stay in force.
 - `feedback-cli --remote-settings` is for humans only. If the user wants to

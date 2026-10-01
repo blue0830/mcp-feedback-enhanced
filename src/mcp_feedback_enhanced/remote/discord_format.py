@@ -2,13 +2,15 @@
 """Message content for the Discord conversation of one feedback session.
 
 Responsibilities:
-- build the forum post title and the first message (embed, mentions, summary file);
+- build the conversation title and the first message (embed, mentions, summary file) as
+  one forum post body, plus the two-request split an ordinary text channel needs;
 - provide the status lines, receipts, hints and closing notes the bot posts.
 
 Limitations:
 - pure functions with no I/O, so the exact payloads can be unit tested;
 - bot texts are short bilingual lines (Simplified Chinese / English) because the post is
-  read on a phone and the user's UI language is not known to the provider;
+  read on a phone and the user's UI language is not known to the provider; they say "post"
+  for both forum posts and text-channel threads;
 - Discord limits are respected here (title 100, embed description 4096, content 2000,
   100 mentioned users), nothing is validated again by the caller.
 """
@@ -25,6 +27,8 @@ from .models import RemoteOutcome, RemoteRequest
 TITLE_LIMIT = 100
 EMBED_SUMMARY_LIMIT = 4000
 AUTO_ARCHIVE_MINUTES = 1440
+# Discord channel type of a public thread (created inside an ordinary text channel).
+PUBLIC_THREAD_TYPE = 11
 MAX_MENTIONED_USERS = 100
 SUMMARY_FILE_NAME = "summary.md"
 EMBED_COLOR = 0x007ACC
@@ -217,17 +221,38 @@ def with_status(embed: dict[str, Any], status: str) -> dict[str, Any]:
 
 @dataclass(frozen=True)
 class PostPayload:
-    """Everything needed to create the forum post."""
+    """Everything needed to open the conversation of one session.
+
+    ``body`` is the forum post creation request: title, archive time and the nested first
+    message. An ordinary text channel cannot nest the message, so the same content is
+    sent as two requests: ``thread_body`` creates the thread, ``message_body`` (plus
+    ``files``) is then posted inside it.
+    """
 
     body: dict[str, Any]
     files: tuple[tuple[str, bytes, str], ...]
     embed: dict[str, Any]
 
+    @property
+    def thread_body(self) -> dict[str, Any]:
+        """Public thread creation body for a text channel: the same title, no message."""
+        return {
+            "name": self.body["name"],
+            "auto_archive_duration": self.body["auto_archive_duration"],
+            "type": PUBLIC_THREAD_TYPE,
+        }
+
+    @property
+    def message_body(self) -> dict[str, Any]:
+        """First message to post inside the new thread (embed, mentions, file reference)."""
+        message: dict[str, Any] = self.body["message"]
+        return message
+
 
 def build_post(
     request: RemoteRequest, allowed_user_ids: tuple[str, ...], status: str
 ) -> PostPayload:
-    """Forum post creation body: title, first message, mentions and optional summary file.
+    """Conversation start: title, first message, mentions and optional summary file.
 
     Mentions are restricted to the allowlisted users, so ``@everyone`` or role mentions
     inside the summary notify nobody.

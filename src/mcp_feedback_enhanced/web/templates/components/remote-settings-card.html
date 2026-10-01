@@ -64,18 +64,18 @@ absent. Dynamic text is written with textContent only (no server text goes into 
             </div>
         </div>
 
-        <!-- Forum channel -->
+        <!-- Channel: a text channel (one thread per request) or a forum channel (one post per request) -->
         <div class="setting-item">
             <div class="setting-info">
-                <label class="setting-label" for="remoteForumChannelId" data-i18n="remoteChannel.forumChannel.label">論壇頻道 ID</label>
-                <div class="setting-description" data-i18n="remoteChannel.forumChannel.description">
-                    用來接收訊息的 Discord 論壇頻道（Forum）。在 Discord 裡開啟開發者模式後，右鍵頻道選擇「複製頻道 ID」。
+                <label class="setting-label" for="remoteChannelId" data-i18n="remoteChannel.channel.label">頻道 ID</label>
+                <div class="setting-description" data-i18n="remoteChannel.channel.description">
+                    用來接收訊息的 Discord 私人頻道：一般文字頻道（每次請求開一個討論串），或論壇頻道（每次請求發一篇貼文，需要社群伺服器）。在 Discord 裡開啟開發者模式後，右鍵頻道選擇「複製頻道 ID」。
                 </div>
             </div>
             <div class="setting-control">
-                <input type="text" id="remoteForumChannelId" class="form-input" inputmode="numeric"
+                <input type="text" id="remoteChannelId" class="form-input" inputmode="numeric"
                        autocomplete="off" spellcheck="false" maxlength="20"
-                       data-i18n-placeholder="remoteChannel.forumChannel.placeholder">
+                       data-i18n-placeholder="remoteChannel.channel.placeholder">
             </div>
         </div>
 

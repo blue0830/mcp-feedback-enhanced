@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Remote settings card
-The remote communication card MUST contain an enable toggle, a provider selector (Discord), a write-only token field, a forum channel id field, an allowlisted user id list, a test button, a verification status, and a notice that summaries and replies pass through the chosen third-party service. The same card component MUST be used in the settings tab of `feedback-cli` windows and on the standalone settings page. All texts MUST be localized for zh-TW, zh-CN and en.
+The remote communication card MUST contain an enable toggle, a provider selector (Discord), a write-only token field, a channel id field (a text channel or a forum channel), an allowlisted user id list, a test button, a verification status, and a notice that summaries and replies pass through the chosen third-party service. The same card component MUST be used in the settings tab of `feedback-cli` windows and on the standalone settings page. All texts MUST be localized for zh-TW, zh-CN and en.
 
 #### Scenario: Card displayed
 - **WHEN** the user opens the settings tab of a `feedback-cli` window or the standalone settings page
@@ -100,12 +100,24 @@ The enable toggle MUST take effect only when the stored verification fingerprint
 - **THEN** verification is invalidated and the effective state becomes disabled until a new test passes
 
 ### Requirement: End-to-end test flow
-The test action MUST verify, in order and with per-step results: token validity, channel existence and forum type, ability to create a post, and that an allowlisted user can reply with readable text within 120 seconds. Only when all steps pass MUST the verification fingerprint be stored. The test post MUST be archived afterwards.
+The test action MUST verify, in order and with per-step results: token validity, channel existence and type (text or forum), ability to start a thread or post in it, and that an allowlisted user can reply with readable text within 120 seconds. Only when all steps pass MUST the verification fingerprint be stored. The test thread MUST be archived afterwards. A step whose request failed transiently (network error, server error, rate limit) MUST be attempted up to three times before it is reported as failed; permanent failures MUST NOT be retried.
 
 #### Scenario: All steps pass
-- **WHEN** the user runs the test and replies in the test post within 120 seconds
+- **WHEN** the user runs the test and replies in the test thread within 120 seconds
 - **THEN** every step is reported as passed and the verification fingerprint is stored
-- **THEN** the test post is archived
+- **THEN** the test thread is archived
+
+#### Scenario: Unsupported channel type
+- **WHEN** the configured channel is neither a text channel nor a forum channel
+- **THEN** the channel step fails with the reason `unsupported_channel`, later steps are skipped and no verification fingerprint is stored
+
+#### Scenario: Transient failure on the first attempt
+- **WHEN** the first request of a step fails with a network error and the next attempt succeeds
+- **THEN** the step is reported as passed and the check continues
+
+#### Scenario: Permanent failure
+- **WHEN** a request is rejected because the token is invalid or the bot lacks a permission
+- **THEN** the step fails right away without further attempts
 
 #### Scenario: Reply text unreadable
 - **WHEN** the allowlisted user replies but the message text is empty because message content access is disabled

@@ -662,9 +662,9 @@
             "placeholder": "Paste the bot token",
             "placeholderSet": "Already set (leave empty to keep it)"
         },
-        "forumChannel": {
-            "label": "Forum channel ID",
-            "description": "The Discord forum channel that receives the messages. Turn on Developer Mode in Discord, then right-click the channel and choose \"Copy Channel ID\".",
+        "channel": {
+            "label": "Channel ID",
+            "description": "The private Discord channel that receives the messages: an ordinary text channel (every request opens a thread) or a forum channel (every request becomes a post; needs a Community server). Turn on Developer Mode in Discord, then right-click the channel and choose \"Copy Channel ID\".",
             "placeholder": "e.g. 123456789012345678"
         },
         "allowedUsers": {
@@ -680,7 +680,7 @@
             "effective": "✅ Verified and active: every feedback request is mirrored to the remote channel.",
             "verifiedDisabled": "✅ Verified, currently switched off.",
             "unverified": "⚠️ Not verified yet. Click \"Test connection\" first.",
-            "incomplete": "Fill in all settings first (token, forum channel ID, allowed user IDs)."
+            "incomplete": "Fill in all settings first (token, channel ID, allowed user IDs)."
         },
         "messages": {
             "saved": "Saved.",
@@ -694,13 +694,13 @@
             "title": "Connection test",
             "steps": {
                 "token": "Bot token is valid",
-                "channel": "Forum channel is usable",
-                "post": "Can create a post",
+                "channel": "Channel is usable",
+                "post": "Can start a thread or post",
                 "reply": "Received your reply",
-                "archive": "Archive the test post"
+                "archive": "Archive the test thread or post"
             },
             "running": "Testing…",
-            "replyPrompt": "Reply with any text in the test post that was just created on Discord. {seconds} s left.",
+            "replyPrompt": "Reply with any text in the test thread (or post) that was just created on Discord. {seconds} s left.",
             "passed": "✅ Test passed. You can enable remote communication now.",
             "passedNotSaved": "The test passed, but the settings changed during the test. Run it again.",
             "passedSaveFailed": "The test passed, but saving the result failed. Please retry.",
@@ -720,7 +720,7 @@
         "reasons": {
             "not_verified": "the settings have not passed the test",
             "token_required": "bot token is missing",
-            "channel_required": "forum channel ID is missing",
+            "channel_required": "channel ID is missing",
             "allowlist_required": "allowed user IDs are missing",
             "unsupported_provider": "unsupported remote channel",
             "invalid_token": "the token format is invalid",
@@ -736,9 +736,9 @@
             "unavailable": "this window does not support remote settings",
             "request_failed": "the request failed",
             "auth_failed": "the token is invalid or was revoked",
-            "missing_permission": "the bot lacks permissions (view channel, create posts, send messages, manage threads)",
+            "missing_permission": "the bot lacks permissions (view channel, create public threads or posts, send messages in threads, embed links, read message history)",
             "not_found": "channel not found; check the channel ID and that the bot joined the server",
-            "not_forum": "that channel is not a forum channel",
+            "unsupported_channel": "that channel is neither a text channel nor a forum channel",
             "forum_tag_required": "the forum requires a tag on new posts and none could be chosen",
             "message_content": "message text is unreadable; enable the Message Content Intent in the Discord developer portal",
             "no_text": "the message has no readable text",

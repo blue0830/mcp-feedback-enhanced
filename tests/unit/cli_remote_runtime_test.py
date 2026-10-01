@@ -112,7 +112,7 @@ def _enable_remote() -> None:
             "provider": "discord",
             "discord": {
                 "token": TOKEN,
-                "forum_channel_id": CHANNEL,
+                "channel_id": CHANNEL,
                 "allowed_user_ids": [USER],
             },
         }
@@ -203,7 +203,7 @@ async def test_enabled_but_unverified_config_reports_why_it_is_off(monkeypatch):
         {
             "discord": {
                 "token": TOKEN,
-                "forum_channel_id": CHANNEL,
+                "channel_id": CHANNEL,
                 "allowed_user_ids": [USER],
             }
         }

@@ -374,6 +374,44 @@ async def test_finalize_is_bounded_when_the_provider_close_hangs():
 
 
 @pytest.mark.asyncio
+async def test_a_remote_answer_gets_a_longer_close_budget_than_a_local_one():
+    # The close takes longer than the short budget but fits the remote one.
+    outcomes = {}
+    for outcome in (RemoteOutcome.REMOTE_ANSWERED, RemoteOutcome.LOCAL_ANSWERED):
+        channel, recorder = FakeChannel(close_delay=0.3), Recorder()
+        coordinator = _coordinator(
+            channel, recorder, finalize_timeout=0.1, remote_finalize_timeout=3.0
+        )
+        coordinator.start()
+        await _settle(lambda recorder=recorder: RemoteState.WAITING in recorder.states)
+        await coordinator.finalize(outcome)
+        outcomes[outcome] = channel.closed
+
+    assert outcomes[RemoteOutcome.REMOTE_ANSWERED] == [
+        ("conv-abcdef12", RemoteOutcome.REMOTE_ANSWERED)
+    ]
+    assert outcomes[RemoteOutcome.LOCAL_ANSWERED] == []
+
+
+@pytest.mark.asyncio
+async def test_the_remote_close_budget_is_still_a_bound():
+    channel, recorder = FakeChannel(close_delay=30), Recorder()
+    coordinator = _coordinator(
+        channel, recorder, finalize_timeout=0.1, remote_finalize_timeout=0.2
+    )
+
+    coordinator.start()
+    await _settle(lambda: RemoteState.WAITING in recorder.states)
+    started = time.monotonic()
+    await coordinator.finalize(RemoteOutcome.REMOTE_ANSWERED)
+
+    assert time.monotonic() - started < 1.0
+    assert channel.closed == []
+    # The bound only limits the wait: the status still tells the user it was answered.
+    assert recorder.states[-1] == RemoteState.ANSWERED_REMOTELY
+
+
+@pytest.mark.asyncio
 async def test_finalize_is_idempotent_and_start_after_finalize_is_a_no_op():
     channel, recorder = FakeChannel(), Recorder()
     coordinator = _coordinator(channel, recorder)

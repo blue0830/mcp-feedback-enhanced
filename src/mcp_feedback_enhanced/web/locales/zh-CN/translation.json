@@ -648,9 +648,9 @@
             "placeholder": "粘贴 Bot Token",
             "placeholderSet": "已设置（留空则保持不变）"
         },
-        "forumChannel": {
-            "label": "论坛频道 ID",
-            "description": "用来接收消息的 Discord 论坛频道（Forum）。在 Discord 里开启开发者模式后，右键频道选择「复制频道 ID」。",
+        "channel": {
+            "label": "频道 ID",
+            "description": "用来接收消息的 Discord 私密频道：普通文字频道（每次请求开一个子区），或论坛频道（每次请求发一个帖子，需要社区服务器）。在 Discord 里开启开发者模式后，右键频道选择「复制频道 ID」。",
             "placeholder": "例如 123456789012345678"
         },
         "allowedUsers": {
@@ -666,7 +666,7 @@
             "effective": "✅ 已验证并生效：之后的每次反馈请求都会同步到远程。",
             "verifiedDisabled": "✅ 已验证，当前未启用。",
             "unverified": "⚠️ 设置尚未验证，请先点击「测试连接」。",
-            "incomplete": "请先填写完整设置（Token、论坛频道 ID、允许的用户 ID）。"
+            "incomplete": "请先填写完整设置（Token、频道 ID、允许的用户 ID）。"
         },
         "messages": {
             "saved": "已保存。",
@@ -680,13 +680,13 @@
             "title": "连接测试",
             "steps": {
                 "token": "Bot Token 有效",
-                "channel": "论坛频道可用",
-                "post": "能在频道里发帖",
+                "channel": "频道可用",
+                "post": "能在频道里开子区或发帖",
                 "reply": "收到你的回复",
-                "archive": "归档测试帖"
+                "archive": "归档测试子区或帖子"
             },
             "running": "正在测试…",
-            "replyPrompt": "请到 Discord 里刚创建的测试帖回复任意文字，还剩 {seconds} 秒。",
+            "replyPrompt": "请到 Discord 里刚创建的测试子区（或帖子）回复任意文字，还剩 {seconds} 秒。",
             "passed": "✅ 测试通过，现在可以启用远程沟通了。",
             "passedNotSaved": "测试通过，但测试期间设置被修改了，需要重新测试。",
             "passedSaveFailed": "测试通过，但保存验证结果失败，请重试。",
@@ -706,7 +706,7 @@
         "reasons": {
             "not_verified": "设置尚未通过测试",
             "token_required": "缺少 Bot Token",
-            "channel_required": "缺少论坛频道 ID",
+            "channel_required": "缺少频道 ID",
             "allowlist_required": "缺少允许的用户 ID",
             "unsupported_provider": "不支持的远程渠道",
             "invalid_token": "Token 格式不正确",
@@ -722,9 +722,9 @@
             "unavailable": "当前窗口不支持远程设置",
             "request_failed": "请求失败",
             "auth_failed": "Token 无效或已被撤销",
-            "missing_permission": "机器人缺少权限（查看频道、发帖、发消息、管理帖子）",
+            "missing_permission": "机器人缺少权限（查看频道、创建公开子区或帖子、在子区中发消息、嵌入链接、读取消息历史）",
             "not_found": "找不到该频道，请检查频道 ID，以及机器人是否已加入服务器",
-            "not_forum": "该频道不是论坛频道",
+            "unsupported_channel": "该频道既不是文字频道，也不是论坛频道",
             "forum_tag_required": "该论坛要求发帖必须选标签，无法自动处理",
             "message_content": "读不到消息文字，请在 Discord 开发者后台打开 Message Content Intent",
             "no_text": "消息里没有可读的文字",

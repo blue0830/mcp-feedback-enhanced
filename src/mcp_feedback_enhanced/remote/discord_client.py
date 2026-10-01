@@ -2,8 +2,8 @@
 """Minimal Discord REST client used by the Discord remote provider.
 
 Responsibilities:
-- perform authenticated JSON/multipart requests against the Discord HTTP API with a 5 s
-  connect and 10 s total timeout, reading proxy settings from the environment;
+- perform authenticated JSON/multipart requests against the Discord HTTP API with a 10 s
+  connect and 30 s total timeout, reading proxy settings from the environment;
 - honor rate limits (``Retry-After``, ``X-RateLimit-*``) with a bounded wait;
 - classify failures for the provider: 401/403/404/other 4xx are permanent, 5xx and network
   errors are transient;
@@ -34,8 +34,12 @@ from .models import RemoteChannelError
 
 
 API_BASE = "https://discord.com/api/v10"
-CONNECT_TIMEOUT_SECONDS = 5.0
-TOTAL_TIMEOUT_SECONDS = 10.0
+# Generous on purpose: behind a slow or flaky proxy a request can stall for about 10 s and
+# still succeed, and cutting it off only makes the caller repeat the same wait. Every caller
+# runs in the background; the paths that must stay short (finalize, cleanup) apply their
+# own tighter bounds on top of these.
+CONNECT_TIMEOUT_SECONDS = 10.0
+TOTAL_TIMEOUT_SECONDS = 30.0
 
 # A single rate-limit wait never exceeds this; a longer one is reported as a transient
 # failure so the caller's backoff takes over instead of a silent long stall.

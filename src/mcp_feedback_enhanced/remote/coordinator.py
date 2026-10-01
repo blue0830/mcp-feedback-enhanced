@@ -7,7 +7,9 @@ Responsibilities:
 - isolate every provider failure: nothing raised here may reach the local flow;
 - report status changes (connecting, waiting, unavailable, answered) through a callback;
 - hand an accepted reply to the session through the shared first-success arbitration;
-- finalize within a bounded time on every end path.
+- finalize within a bounded time on every end path: a short bound, except for a remote
+  answer, whose outcome marking gets a longer one (the user is not waiting for the Agent
+  there, and the connection may be slow).
 
 Limitations:
 - one coordinator serves one session and one conversation; it is never reused;
@@ -42,9 +44,15 @@ REMOTE_SOURCE_PREFIX = "remote:"
 # Backoff between attempts to open the conversation when the provider is unreachable.
 DEFAULT_OPEN_RETRY_DELAYS: tuple[float, ...] = (2.0, 4.0, 8.0, 16.0, 30.0)
 
-# Total time budget of finalize(): closing the conversation must never delay the CLI exit
+# Time budget of finalize(): closing the conversation must never delay the CLI exit
 # noticeably, so the provider close is cut off after this many seconds.
 DEFAULT_FINALIZE_TIMEOUT_SECONDS = 5.0
+
+# Longer close budget when the answer came from the remote channel: the user is away from
+# the computer and relies on the conversation showing the outcome, which can take a while
+# behind a slow connection (every request may stall for about 10 s). A local answer keeps
+# the short budget above because there the user is waiting for the Agent to continue.
+DEFAULT_REMOTE_FINALIZE_TIMEOUT_SECONDS = 20.0
 
 
 @dataclass(frozen=True)
@@ -67,7 +75,9 @@ class RemoteSessionCoordinator:
     Notes:
     - ``start()`` returns immediately; the connecting status is reported synchronously
       and everything else happens in a task;
-    - ``finalize()`` is idempotent and never raises (except cancellation of the caller).
+    - ``finalize()`` is idempotent and never raises (except cancellation of the caller);
+      the provider close is bounded by ``finalize_timeout``, or by the longer
+      ``remote_finalize_timeout`` when the answer came from the remote channel.
     """
 
     def __init__(
@@ -78,6 +88,7 @@ class RemoteSessionCoordinator:
         submit: SubmitCallback,
         report_status: StatusCallback,
         finalize_timeout: float = DEFAULT_FINALIZE_TIMEOUT_SECONDS,
+        remote_finalize_timeout: float = DEFAULT_REMOTE_FINALIZE_TIMEOUT_SECONDS,
         open_retry_delays: Sequence[float] = DEFAULT_OPEN_RETRY_DELAYS,
     ) -> None:
         self._channel = channel
@@ -85,6 +96,7 @@ class RemoteSessionCoordinator:
         self._submit = submit
         self._report_status = report_status
         self._finalize_timeout = finalize_timeout
+        self._remote_finalize_timeout = remote_finalize_timeout
         self._open_retry_delays = tuple(open_retry_delays) or (30.0,)
         self._task: asyncio.Task[None] | None = None
         self._handle: RemoteHandle | None = None
@@ -116,15 +128,22 @@ class RemoteSessionCoordinator:
             if not task.done():
                 task.cancel()
             # asyncio.wait never raises the task's exception; it only bounds the wait.
+            # Unwinding a cancelled task involves no network, so the short bound applies
+            # whatever the outcome is.
             await asyncio.wait({task}, timeout=self._finalize_timeout)
             if task.done() and not task.cancelled():
                 task.exception()  # Mark retrieved; _run() already isolated everything
 
         handle = self._handle
         if handle is not None:
+            close_timeout = (
+                self._remote_finalize_timeout
+                if outcome == RemoteOutcome.REMOTE_ANSWERED
+                else self._finalize_timeout
+            )
             try:
                 await asyncio.wait_for(
-                    self._channel.close(handle, outcome), timeout=self._finalize_timeout
+                    self._channel.close(handle, outcome), timeout=close_timeout
                 )
             except asyncio.CancelledError:
                 raise

@@ -667,9 +667,9 @@
             "placeholder": "貼上 Bot Token",
             "placeholderSet": "已設定（留空則保持不變）"
         },
-        "forumChannel": {
-            "label": "論壇頻道 ID",
-            "description": "用來接收訊息的 Discord 論壇頻道（Forum）。在 Discord 裡開啟開發者模式後，右鍵頻道選擇「複製頻道 ID」。",
+        "channel": {
+            "label": "頻道 ID",
+            "description": "用來接收訊息的 Discord 私人頻道：一般文字頻道（每次請求開一個討論串），或論壇頻道（每次請求發一篇貼文，需要社群伺服器）。在 Discord 裡開啟開發者模式後，右鍵頻道選擇「複製頻道 ID」。",
             "placeholder": "例如 123456789012345678"
         },
         "allowedUsers": {
@@ -685,7 +685,7 @@
             "effective": "✅ 已驗證並生效：之後的每次回饋請求都會同步到遠端。",
             "verifiedDisabled": "✅ 已驗證，目前未啟用。",
             "unverified": "⚠️ 設定尚未驗證，請先點擊「測試連線」。",
-            "incomplete": "請先填寫完整設定（Token、論壇頻道 ID、允許的使用者 ID）。"
+            "incomplete": "請先填寫完整設定（Token、頻道 ID、允許的使用者 ID）。"
         },
         "messages": {
             "saved": "已儲存。",
@@ -699,13 +699,13 @@
             "title": "連線測試",
             "steps": {
                 "token": "Bot Token 有效",
-                "channel": "論壇頻道可用",
-                "post": "能在頻道裡發文",
+                "channel": "頻道可用",
+                "post": "能在頻道裡開討論串或發文",
                 "reply": "收到你的回覆",
-                "archive": "封存測試貼文"
+                "archive": "封存測試討論串或貼文"
             },
             "running": "正在測試…",
-            "replyPrompt": "請到 Discord 裡剛建立的測試貼文回覆任意文字，還剩 {seconds} 秒。",
+            "replyPrompt": "請到 Discord 裡剛建立的測試討論串（或貼文）回覆任意文字，還剩 {seconds} 秒。",
             "passed": "✅ 測試通過，現在可以啟用遠端溝通了。",
             "passedNotSaved": "測試通過，但測試期間設定被修改了，需要重新測試。",
             "passedSaveFailed": "測試通過，但儲存驗證結果失敗，請重試。",
@@ -725,7 +725,7 @@
         "reasons": {
             "not_verified": "設定尚未通過測試",
             "token_required": "缺少 Bot Token",
-            "channel_required": "缺少論壇頻道 ID",
+            "channel_required": "缺少頻道 ID",
             "allowlist_required": "缺少允許的使用者 ID",
             "unsupported_provider": "不支援的遠端渠道",
             "invalid_token": "Token 格式不正確",
@@ -741,9 +741,9 @@
             "unavailable": "目前視窗不支援遠端設定",
             "request_failed": "請求失敗",
             "auth_failed": "Token 無效或已被撤銷",
-            "missing_permission": "機器人缺少權限（檢視頻道、發文、傳送訊息、管理貼文）",
+            "missing_permission": "機器人缺少權限（檢視頻道、建立公開討論串或貼文、在討論串中傳送訊息、嵌入連結、讀取訊息歷史）",
             "not_found": "找不到該頻道，請檢查頻道 ID，以及機器人是否已加入伺服器",
-            "not_forum": "該頻道不是論壇頻道",
+            "unsupported_channel": "該頻道既不是文字頻道，也不是論壇頻道",
             "forum_tag_required": "該論壇要求發文必須選標籤，無法自動處理",
             "message_content": "讀不到訊息文字，請在 Discord 開發者後台開啟 Message Content Intent",
             "no_text": "訊息裡沒有可讀的文字",

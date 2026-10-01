@@ -48,6 +48,8 @@ from tests.helpers.fake_discord import (
     BOT_TOKEN,
     FORUM_ID,
     OTHER_USER,
+    TEXT_CHANNEL_ID,
+    VOICE_CHANNEL_ID,
     FakeDiscord,
 )
 
@@ -74,7 +76,7 @@ async def fake():
 def settings(**overrides: Any) -> DiscordSettings:
     values: dict[str, Any] = {
         "token": BOT_TOKEN,
-        "forum_channel_id": FORUM_ID,
+        "channel_id": FORUM_ID,
         "allowed_user_ids": (ALLOWED_USER,),
     }
     values.update(overrides)
@@ -254,6 +256,123 @@ async def test_open_failure_releases_the_http_client(fake):
     assert caught.value.permanent is True
     assert caught.value.reason == "missing_permission"
     assert all(client._session is None for client in channel.created_clients)
+
+
+# ------------------------------------------------- text channel (one thread each)
+
+
+def text_settings() -> DiscordSettings:
+    return settings(channel_id=TEXT_CHANNEL_ID)
+
+
+@pytest.mark.asyncio
+async def test_open_in_a_text_channel_starts_a_public_thread_with_the_card_inside(fake):
+    channel, handle = await open_channel(fake, settings=text_settings())
+
+    thread_id = handle.conversation_id
+    assert list(fake.threads) == [thread_id]
+    thread = fake.threads[thread_id]
+    assert thread["name"] == "[my-project] Please review the change (#abcdef12)"
+    assert thread["auto_archive_duration"] == 1440
+
+    # The thread is created without a message; the card is posted inside it afterwards.
+    create = fake.calls("POST", r"/threads$")[0]
+    assert create.path == f"/channels/{TEXT_CHANNEL_ID}/threads"
+    assert create.json == {
+        "name": thread["name"],
+        "auto_archive_duration": 1440,
+        "type": 11,
+    }
+    card = fake.calls("POST", r"/messages$")[0]
+    assert card.path == f"/channels/{thread_id}/messages"
+    assert f"<@{ALLOWED_USER}>" in card.json["content"]
+    assert card.json["allowed_mentions"] == {"parse": [], "users": [ALLOWED_USER]}
+    assert "Please review the change" in card.json["embeds"][0]["description"]
+
+    # Replies are read after the card, which is not the thread itself.
+    assert handle.state["first_message_id"] == thread["messages"][0]["id"]
+    assert handle.state["first_message_id"] != thread_id
+    await channel.close(handle, RemoteOutcome.REMOTE_ANSWERED)
+
+
+@pytest.mark.asyncio
+async def test_text_channel_thread_reads_replies_after_the_card_and_closes_like_a_post(
+    fake,
+):
+    channel, handle = await open_channel(fake, settings=text_settings())
+    thread_id = handle.conversation_id
+    card_id = handle.state["first_message_id"]
+
+    task = asyncio.create_task(channel.wait_reply(handle, StateLog()))
+    fake.add_user_message(thread_id, "from my phone")
+    reply = await asyncio.wait_for(task, 5)
+
+    assert reply.text == "from my phone"
+    assert bot_texts(fake, thread_id) == [RECEIPT]
+    assert fake.calls("GET", r"/messages$")[0].query["after"] == card_id
+
+    await channel.close(handle, RemoteOutcome.REMOTE_ANSWERED)
+    card = fake.threads[thread_id]["messages"][0]
+    assert "Answered here" in _status_of(card["embeds"][0])
+    assert fake.threads[thread_id]["archived"] is True
+
+
+@pytest.mark.asyncio
+async def test_text_channel_long_summary_file_travels_with_the_card(fake):
+    summary = "x" * 5000 + "TAIL-MARKER"
+    channel = make_channel(fake, settings=text_settings())
+    handle = await channel.open(make_request(summary=summary))
+
+    # The file belongs to the card message, not to the thread creation request.
+    assert fake.calls("POST", r"/threads$")[0].files == []
+    card = fake.calls("POST", r"/messages$")[0]
+    assert card.json["attachments"] == [{"id": 0, "filename": "summary.md"}]
+    assert card.files == [("summary.md", summary.encode("utf-8"))]
+    await channel.close(handle, RemoteOutcome.ERROR)
+
+
+@pytest.mark.asyncio
+async def test_unpostable_card_fails_the_open_and_archives_the_empty_thread(fake):
+    fake.inject(
+        "POST",
+        r"/messages$",
+        403,
+        body={"message": "Missing Permissions", "code": 50013},
+    )
+    channel = make_channel(fake, settings=text_settings())
+
+    with pytest.raises(RemoteChannelError) as caught:
+        await channel.open(make_request())
+
+    assert caught.value.reason == "missing_permission"
+    (thread,) = fake.threads.values()
+    assert thread["messages"] == []
+    assert thread["archived"] is True  # Archived, so no active empty thread is left
+    assert all(client._session is None for client in channel.created_clients)
+
+
+@pytest.mark.asyncio
+async def test_open_rejects_a_channel_that_can_not_host_conversations(fake):
+    channel = make_channel(fake, settings=settings(channel_id=VOICE_CHANNEL_ID))
+
+    with pytest.raises(RemoteChannelError) as caught:
+        await channel.open(make_request())
+
+    assert caught.value.permanent is True
+    assert caught.value.reason == "unsupported_channel"
+    assert fake.calls("POST", r"/threads$") == []
+    assert all(client._session is None for client in channel.created_clients)
+
+
+@pytest.mark.asyncio
+async def test_open_reports_a_missing_channel_before_creating_anything(fake):
+    channel = make_channel(fake, settings=settings(channel_id="123456789012345678"))
+
+    with pytest.raises(RemoteChannelError) as caught:
+        await channel.open(make_request())
+
+    assert caught.value.reason == "not_found"
+    assert fake.calls("POST", r"/threads$") == []
 
 
 # ----------------------------------------------------------------- reply rules
@@ -733,8 +852,8 @@ async def test_network_errors_are_transient_and_timeouts_follow_the_spec():
     assert caught.value.permanent is False
     assert caught.value.reason == "network_error"
     session = client._get_session()
-    assert session.timeout.connect == 5
-    assert session.timeout.total == 10
+    assert session.timeout.connect == 10
+    assert session.timeout.total == 30
     assert session.trust_env is True
     await client.aclose()
 
@@ -866,8 +985,11 @@ async def test_close_never_raises_even_when_everything_fails(fake):
 
 
 @pytest.mark.asyncio
-async def test_full_session_through_the_coordinator(fake):
-    channel = make_channel(fake)
+@pytest.mark.parametrize(
+    "channel_id", [FORUM_ID, TEXT_CHANNEL_ID], ids=["forum", "text-channel"]
+)
+async def test_full_session_through_the_coordinator(fake, channel_id):
+    channel = make_channel(fake, settings=settings(channel_id=channel_id))
     submitted: list[tuple[str, str]] = []
     statuses: list[str] = []
 
@@ -946,8 +1068,11 @@ def states_of(check: ConnectionCheckRun) -> dict[str, str]:
 
 
 @pytest.mark.asyncio
-async def test_check_passes_when_an_allowlisted_user_replies(fake):
-    checker = make_checker(fake)
+@pytest.mark.parametrize(
+    "channel_id", [FORUM_ID, TEXT_CHANNEL_ID], ids=["forum", "text-channel"]
+)
+async def test_check_passes_when_an_allowlisted_user_replies(fake, channel_id):
+    checker = make_checker(fake, settings=settings(channel_id=channel_id))
     check = new_run(checker)
 
     task = asyncio.create_task(checker.run(check))
@@ -990,26 +1115,24 @@ async def test_check_stops_at_the_token_step_for_a_bad_token(fake):
     assert check.steps[0].reason == "auth_failed"
     assert check.passed is False
     assert fake.threads == {}
+    assert len(fake.calls("GET", r"/users/@me$")) == 1  # A permanent failure is final
 
 
 @pytest.mark.asyncio
-async def test_check_fails_when_the_channel_is_not_a_forum(fake):
-    fake.forum_type = 0
-    checker = make_checker(fake)
+async def test_check_fails_when_the_channel_can_not_host_conversations(fake):
+    checker = make_checker(fake, settings=settings(channel_id=VOICE_CHANNEL_ID))
     check = new_run(checker)
 
     await checker.run(check)
 
     assert check.steps[1].state == CheckStepState.FAILED
-    assert check.steps[1].reason == "not_forum"
+    assert check.steps[1].reason == "unsupported_channel"
     assert fake.threads == {}
 
 
 @pytest.mark.asyncio
 async def test_check_reports_a_missing_channel(fake):
-    checker = make_checker(
-        fake, settings=settings(forum_channel_id="123456789012345678")
-    )
+    checker = make_checker(fake, settings=settings(channel_id="123456789012345678"))
     check = new_run(checker)
 
     await checker.run(check)
@@ -1032,6 +1155,68 @@ async def test_check_reports_missing_permission_to_create_posts(fake):
 
     assert check.steps[2].state == CheckStepState.FAILED
     assert check.steps[2].reason == "missing_permission"
+
+
+@pytest.mark.asyncio
+async def test_check_reports_missing_permission_to_post_inside_a_text_thread(fake):
+    fake.inject(
+        "POST",
+        r"/messages$",
+        403,
+        body={"message": "Missing Permissions", "code": 50013},
+    )
+    checker = make_checker(fake, settings=text_settings())
+    check = new_run(checker)
+
+    await checker.run(check)
+
+    assert check.steps[2].state == CheckStepState.FAILED
+    assert check.steps[2].reason == "missing_permission"
+    assert len(fake.calls("POST", r"/threads$")) == 1  # A permanent failure is final
+    (thread,) = fake.threads.values()
+    assert thread["archived"] is True  # The empty thread was not left active
+
+
+@pytest.mark.asyncio
+async def test_check_repeats_a_step_after_transient_failures(fake):
+    fake.inject("GET", r"/users/@me$", 500, body={}, times=2)
+    checker = make_checker(fake, reply_timeout=0.2)
+    check = new_run(checker)
+
+    await asyncio.wait_for(checker.run(check), 5)
+
+    assert check.steps[0].state == CheckStepState.OK
+    assert len(fake.calls("GET", r"/users/@me$")) == 3
+    assert check.steps[2].state == CheckStepState.OK  # The check went on afterwards
+
+
+@pytest.mark.asyncio
+async def test_check_gives_up_on_a_step_after_three_failed_attempts(fake):
+    fake.inject("GET", r"/users/@me$", 500, body={}, times=5)
+    checker = make_checker(fake)
+    check = new_run(checker)
+
+    await checker.run(check)
+
+    assert check.steps[0].state == CheckStepState.FAILED
+    assert check.steps[0].reason == "server_error"
+    assert len(fake.calls("GET", r"/users/@me$")) == 3
+    assert states_of(check)["channel"] == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_check_retries_the_post_step_and_archives_the_abandoned_thread(fake):
+    fake.inject("POST", r"/messages$", 500, body={}, times=1)
+    checker = make_checker(fake, settings=text_settings(), reply_timeout=0.2)
+    check = new_run(checker)
+
+    await asyncio.wait_for(checker.run(check), 5)
+
+    assert check.steps[2].state == CheckStepState.OK
+    abandoned, retried = fake.threads.values()
+    assert abandoned["messages"] == []
+    assert abandoned["archived"] is True
+    assert retried["messages"]  # The second attempt holds the card
 
 
 @pytest.mark.asyncio

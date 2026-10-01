@@ -75,7 +75,7 @@ The local window MUST display the current remote state: off, connecting, waiting
 - **THEN** the local window updates to the unavailable state with the reason
 
 ### Requirement: Bounded finalization with outcome marking
-On every session end path the system MUST attempt, within a bounded time, to mark the remote conversation with the final outcome (answered remotely, answered locally, timeout, interrupted, error) and to archive it. A finalization failure MUST NOT change the CLI result or exit behavior.
+On every session end path the system MUST attempt, within a bounded time, to mark the remote conversation with the final outcome (answered remotely, answered locally, timeout, interrupted, error) and to archive it. The bound MUST be longer when the session ended with a remote answer (about 20 seconds: the user is away from the computer and the connection may be slow) than for every other outcome (about 5 seconds: a local answer MUST NOT delay the CLI exit noticeably). A finalization failure MUST NOT change the CLI result or exit behavior.
 
 #### Scenario: Timeout
 - **WHEN** the CLI wait times out
@@ -88,6 +88,14 @@ On every session end path the system MUST attempt, within a bounded time, to mar
 #### Scenario: Finalization failure
 - **WHEN** marking or archiving the remote conversation fails
 - **THEN** the CLI still exits with the result it already determined
+
+#### Scenario: Slow close after a remote answer
+- **WHEN** the session ended with a remote answer and closing the conversation takes longer than the short bound but within the longer one
+- **THEN** the outcome is still marked and the conversation archived before exit
+
+#### Scenario: Slow close after a local answer
+- **WHEN** the session ended with a local answer and closing the conversation takes longer than the short bound
+- **THEN** the close is abandoned and the CLI exits with the result it already determined
 
 ### Requirement: Liveness marker for stale conversations
 While waiting, the system MUST state the deadline in the remote conversation and MUST refresh a last-alive timestamp in it at most once per minute, so that conversations left behind by a forcibly terminated process are recognizable.

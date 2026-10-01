@@ -63,10 +63,14 @@ class ConfigError(ValueError):
 
 @dataclass(frozen=True)
 class DiscordSettings:
-    """Discord-specific settings."""
+    """Discord-specific settings.
+
+    ``channel_id`` is either a forum channel (needs a Community server) or an ordinary
+    text channel; the provider detects which one it is when it connects.
+    """
 
     token: str = ""
-    forum_channel_id: str = ""
+    channel_id: str = ""
     allowed_user_ids: tuple[str, ...] = ()
 
     def __repr__(self) -> str:
@@ -74,7 +78,7 @@ class DiscordSettings:
         token_state = "<set>" if self.token else "<unset>"
         return (
             f"DiscordSettings(token={token_state}, "
-            f"forum_channel_id={self.forum_channel_id!r}, "
+            f"channel_id={self.channel_id!r}, "
             f"users={len(self.allowed_user_ids)})"
         )
 
@@ -98,7 +102,7 @@ class RemoteChannelConfig:
             {
                 "provider": self.provider,
                 "token": self.discord.token,
-                "channel": self.discord.forum_channel_id,
+                "channel": self.discord.channel_id,
                 "users": sorted(self.discord.allowed_user_ids),
             },
             sort_keys=True,
@@ -112,7 +116,7 @@ class RemoteChannelConfig:
             return "unsupported_provider"
         if not self.discord.token:
             return "token_required"
-        if not self.discord.forum_channel_id:
+        if not self.discord.channel_id:
             return "channel_required"
         if not self.discord.allowed_user_ids:
             return "allowlist_required"
@@ -221,7 +225,7 @@ class RemoteConfigStore:
         if not isinstance(discord_raw, dict):
             discord_raw = {}
         token = discord_raw.get("token")
-        channel = discord_raw.get("forum_channel_id")
+        channel = discord_raw.get("channel_id")
         users_raw = discord_raw.get("allowed_user_ids")
         users = tuple(str(u) for u in users_raw) if isinstance(users_raw, list) else ()
         provider = raw.get("provider")
@@ -233,7 +237,7 @@ class RemoteConfigStore:
             verified_fingerprint=fingerprint if isinstance(fingerprint, str) else "",
             discord=DiscordSettings(
                 token=token if isinstance(token, str) else "",
-                forum_channel_id=channel if isinstance(channel, str) else "",
+                channel_id=channel if isinstance(channel, str) else "",
                 allowed_user_ids=users,
             ),
         )
@@ -248,7 +252,7 @@ class RemoteConfigStore:
             "verified_fingerprint": config.verified_fingerprint,
             "discord": {
                 "token": config.discord.token,
-                "forum_channel_id": config.discord.forum_channel_id,
+                "channel_id": config.discord.channel_id,
                 "allowed_user_ids": list(config.discord.allowed_user_ids),
             },
         }
@@ -286,7 +290,7 @@ class RemoteConfigStore:
             "verified": current.is_verified(),
             "discord": {
                 "token_set": bool(current.discord.token),
-                "forum_channel_id": current.discord.forum_channel_id,
+                "channel_id": current.discord.channel_id,
                 "allowed_user_ids": list(current.discord.allowed_user_ids),
             },
         }
@@ -328,9 +332,9 @@ class RemoteConfigStore:
                     raise ConfigError("invalid_token")
                 token = new_token
 
-            channel = current.discord.forum_channel_id
-            if "forum_channel_id" in discord_payload:
-                raw_channel = discord_payload["forum_channel_id"]
+            channel = current.discord.channel_id
+            if "channel_id" in discord_payload:
+                raw_channel = discord_payload["channel_id"]
                 channel = str(raw_channel).strip() if raw_channel is not None else ""
                 if channel and not _SNOWFLAKE_PATTERN.match(channel):
                     raise ConfigError("invalid_channel_id")
@@ -343,7 +347,7 @@ class RemoteConfigStore:
                 current,
                 provider=provider,
                 discord=DiscordSettings(
-                    token=token, forum_channel_id=channel, allowed_user_ids=users
+                    token=token, channel_id=channel, allowed_user_ids=users
                 ),
             )
 

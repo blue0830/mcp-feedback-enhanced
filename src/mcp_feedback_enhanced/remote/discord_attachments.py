@@ -32,8 +32,10 @@ import aiohttp
 # Hosts that serve attachment links returned by the Discord API.
 CDN_HOSTS = frozenset({"cdn.discordapp.com", "media.discordapp.net"})
 MAX_TOTAL_BYTES = 256 * 1024
-CONNECT_TIMEOUT_SECONDS = 5.0
-TOTAL_TIMEOUT_SECONDS = 10.0
+# Same tolerance as the Discord API client (see discord_client.py): the CDN is reached
+# through the same, possibly slow, proxy, and a failed download makes the reply unusable.
+CONNECT_TIMEOUT_SECONDS = 10.0
+TOTAL_TIMEOUT_SECONDS = 30.0
 MAX_REDIRECTS = 3
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 _CHUNK_BYTES = 16 * 1024

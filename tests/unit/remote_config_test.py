@@ -37,7 +37,7 @@ def _full_payload(**overrides):
         "provider": "discord",
         "discord": {
             "token": TOKEN,
-            "forum_channel_id": CHANNEL,
+            "channel_id": CHANNEL,
             "allowed_user_ids": [USER_A],
         },
     }
@@ -120,15 +120,15 @@ def test_view_never_contains_the_token(store):
 def test_save_without_token_keeps_the_stored_token(store):
     store.update(_full_payload())
 
-    store.update({"discord": {"forum_channel_id": "423456789012345678"}})
+    store.update({"discord": {"channel_id": "423456789012345678"}})
     store.update({"discord": {"token": "   "}})
 
     assert store.load().discord.token == TOKEN
-    assert store.load().discord.forum_channel_id == "423456789012345678"
+    assert store.load().discord.channel_id == "423456789012345678"
 
 
 def test_enabling_requires_a_complete_and_verified_configuration(store):
-    store.update({"discord": {"token": TOKEN, "forum_channel_id": CHANNEL}})
+    store.update({"discord": {"token": TOKEN, "channel_id": CHANNEL}})
 
     with pytest.raises(ConfigError) as missing:
         store.update({"enabled": True})
@@ -157,7 +157,7 @@ def test_verified_configuration_can_be_enabled_and_is_effective(store):
     "change",
     [
         {"discord": {"token": TOKEN + "x"}},
-        {"discord": {"forum_channel_id": "423456789012345678"}},
+        {"discord": {"channel_id": "423456789012345678"}},
         {"discord": {"allowed_user_ids": [USER_A, USER_B]}},
     ],
 )
@@ -176,21 +176,17 @@ def test_changing_fields_and_enabling_in_one_request_is_rejected(store):
     _verified_store(store)
 
     with pytest.raises(ConfigError) as error:
-        store.update(
-            {"enabled": True, "discord": {"forum_channel_id": "423456789012345678"}}
-        )
+        store.update({"enabled": True, "discord": {"channel_id": "423456789012345678"}})
 
     assert error.value.code == "not_verified"
-    assert store.load().discord.forum_channel_id == CHANNEL
+    assert store.load().discord.channel_id == CHANNEL
 
 
 def test_an_unchanged_save_keeps_enabled_and_verified(store):
     _verified_store(store)
     store.update({"enabled": True})
 
-    store.update(
-        {"discord": {"forum_channel_id": CHANNEL, "allowed_user_ids": [USER_A]}}
-    )
+    store.update({"discord": {"channel_id": CHANNEL, "allowed_user_ids": [USER_A]}})
 
     assert store.load().is_effective()
 
@@ -203,14 +199,14 @@ def test_disabling_is_always_allowed(store):
 
 
 def test_allowlist_is_required_and_entries_are_validated(store):
-    store.update({"discord": {"token": TOKEN, "forum_channel_id": CHANNEL}})
+    store.update({"discord": {"token": TOKEN, "channel_id": CHANNEL}})
 
     with pytest.raises(ConfigError) as too_short:
         store.update({"discord": {"allowed_user_ids": ["123"]}})
     assert too_short.value.code == "invalid_user_id"
 
     with pytest.raises(ConfigError) as bad_channel:
-        store.update({"discord": {"forum_channel_id": "not-a-number"}})
+        store.update({"discord": {"channel_id": "not-a-number"}})
     assert bad_channel.value.code == "invalid_channel_id"
 
     with pytest.raises(ConfigError) as bad_token:
@@ -257,7 +253,7 @@ def test_rejected_update_writes_nothing(store):
 def test_mark_verified_requires_the_tested_settings_to_be_unchanged(store):
     store.update(_full_payload())
     tested = store.load()
-    store.update({"discord": {"forum_channel_id": "423456789012345678"}})
+    store.update({"discord": {"channel_id": "423456789012345678"}})
 
     with pytest.raises(ConfigError) as error:
         store.mark_verified(tested)
@@ -267,7 +263,7 @@ def test_mark_verified_requires_the_tested_settings_to_be_unchanged(store):
 
 
 def test_mark_verified_rejects_an_incomplete_configuration(store):
-    store.update({"discord": {"token": TOKEN, "forum_channel_id": CHANNEL}})
+    store.update({"discord": {"token": TOKEN, "channel_id": CHANNEL}})
 
     with pytest.raises(ConfigError) as error:
         store.mark_verified(store.load())
