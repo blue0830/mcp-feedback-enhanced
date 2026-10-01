@@ -566,6 +566,7 @@
         "timeout": "会话已超时",
         "cleaned": "会话已清理",
         "feedbackSubmitted": "反馈已成功提交",
+        "feedbackConflict": "此请求已结束，本次提交未生效",
         "userMessageRecorded": "用户消息已记录",
         "historySaved": "会话历史已保存（{{count}} 个会话）",
         "historyLoaded": "会话历史已载入"
@@ -626,5 +627,125 @@
         "toggleAutoSubmit": "切换自动提交",
         "toggleNotification": "切换通知",
         "toggleAudioNotification": "切换音效通知"
+    },
+    "remoteChannel": {
+        "title": "📡 远程沟通",
+        "privacyNotice": "隐私提示：启用后，AI 摘要和你在远程的回复会经由 Discord 传输并保存。请只使用你信任的私人服务器和频道。",
+        "enable": {
+            "label": "启用远程沟通",
+            "description": "开启后，每次请求反馈时都会同步发到 Discord；你在 Discord 里回复，也能让 AI 继续往下走。开启前需要先通过「测试连接」。"
+        },
+        "provider": {
+            "label": "远程渠道",
+            "description": "目前仅支持 Discord。",
+            "options": {
+                "discord": "Discord"
+            }
+        },
+        "token": {
+            "label": "Bot Token",
+            "description": "Discord 机器人的令牌，保存后不会再显示。留空表示保持原来的令牌。",
+            "placeholder": "粘贴 Bot Token",
+            "placeholderSet": "已设置（留空则保持不变）"
+        },
+        "forumChannel": {
+            "label": "论坛频道 ID",
+            "description": "用来接收消息的 Discord 论坛频道（Forum）。在 Discord 里开启开发者模式后，右键频道选择「复制频道 ID」。",
+            "placeholder": "例如 123456789012345678"
+        },
+        "allowedUsers": {
+            "label": "允许回复的用户 ID",
+            "description": "只有这些用户的回复会被采纳，至少填写一个。多个 ID 用逗号或空格分隔。",
+            "placeholder": "例如 123456789012345678, 234567890123456789"
+        },
+        "buttons": {
+            "save": "保存",
+            "test": "测试连接"
+        },
+        "verification": {
+            "effective": "✅ 已验证并生效：之后的每次反馈请求都会同步到远程。",
+            "verifiedDisabled": "✅ 已验证，当前未启用。",
+            "unverified": "⚠️ 设置尚未验证，请先点击「测试连接」。",
+            "incomplete": "请先填写完整设置（Token、论坛频道 ID、允许的用户 ID）。"
+        },
+        "messages": {
+            "saved": "已保存。",
+            "savedNeedsTest": "已保存。设置有变化，需要重新测试连接后才能启用。",
+            "enabled": "已启用远程沟通。",
+            "disabled": "已关闭远程沟通。",
+            "loadFailed": "读取远程设置失败：{reason}",
+            "failed": "操作失败：{reason}"
+        },
+        "check": {
+            "title": "连接测试",
+            "steps": {
+                "token": "Bot Token 有效",
+                "channel": "论坛频道可用",
+                "post": "能在频道里发帖",
+                "reply": "收到你的回复",
+                "archive": "归档测试帖"
+            },
+            "running": "正在测试…",
+            "replyPrompt": "请到 Discord 里刚创建的测试帖回复任意文字，还剩 {seconds} 秒。",
+            "passed": "✅ 测试通过，现在可以启用远程沟通了。",
+            "passedNotSaved": "测试通过，但测试期间设置被修改了，需要重新测试。",
+            "passedSaveFailed": "测试通过，但保存验证结果失败，请重试。",
+            "failed": "❌ 测试未通过，卡在「{step}」：{reason}",
+            "pollFailed": "无法获取测试进度，请稍后重试。"
+        },
+        "status": {
+            "off": "远程：未启用",
+            "offWithReason": "远程：未生效（{reason}）",
+            "connecting": "远程：连接中…",
+            "waiting": "远程：等待回复",
+            "unavailable": "远程：不可用（{reason}）",
+            "answered_remotely": "远程：已在远端答复",
+            "answered_locally": "远程：已在本地答复",
+            "tooltip": "点击打开远程设置"
+        },
+        "reasons": {
+            "not_verified": "设置尚未通过测试",
+            "token_required": "缺少 Bot Token",
+            "channel_required": "缺少论坛频道 ID",
+            "allowlist_required": "缺少允许的用户 ID",
+            "unsupported_provider": "不支持的远程渠道",
+            "invalid_token": "Token 格式不正确",
+            "invalid_channel_id": "频道 ID 必须是 17 到 20 位数字",
+            "invalid_user_id": "用户 ID 必须是 17 到 20 位数字",
+            "invalid_payload": "提交的内容无效",
+            "payload_too_large": "提交的内容过大",
+            "check_in_progress": "已有测试正在进行",
+            "config_changed": "测试期间设置被修改",
+            "save_failed": "保存失败",
+            "unknown_run": "找不到该测试记录",
+            "forbidden": "请求被拒绝（只允许本机访问）",
+            "unavailable": "当前窗口不支持远程设置",
+            "request_failed": "请求失败",
+            "auth_failed": "Token 无效或已被撤销",
+            "missing_permission": "机器人缺少权限（查看频道、发帖、发消息、管理帖子）",
+            "not_found": "找不到该频道，请检查频道 ID，以及机器人是否已加入服务器",
+            "not_forum": "该频道不是论坛频道",
+            "forum_tag_required": "该论坛要求发帖必须选标签，无法自动处理",
+            "message_content": "读不到消息文字，请在 Discord 开发者后台打开 Message Content Intent",
+            "no_text": "消息里没有可读的文字",
+            "timeout": "等待回复超时",
+            "rate_limited": "Discord 限流，请稍后再试",
+            "server_error": "Discord 服务暂时异常",
+            "network_error": "网络不通，无法连接 Discord",
+            "bad_request": "请求被 Discord 拒绝",
+            "bad_response": "Discord 返回了无法识别的内容",
+            "not_open": "远程会话尚未建立",
+            "too_large": "附件过大",
+            "bad_host": "附件来源不受信任",
+            "download_failed": "附件下载失败",
+            "submit_failed": "提交远程回复失败",
+            "internal_error": "内部错误",
+            "cancelled": "测试被取消",
+            "unknown": "未知原因（{code}）"
+        },
+        "standalone": {
+            "title": "远程沟通设置",
+            "hint": "这里只修改远程沟通的设置，不会产生反馈请求。设置好后关闭窗口即可。"
+        }
     }
 }

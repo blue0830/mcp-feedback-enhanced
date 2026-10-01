@@ -577,6 +577,7 @@
         "timeout": "會話已超時",
         "cleaned": "會話已清理",
         "feedbackSubmitted": "反饋已成功提交",
+        "feedbackConflict": "此請求已結束，本次提交未生效",
         "userMessageRecorded": "用戶消息已記錄",
         "historySaved": "會話歷史已保存（{{count}} 個會話）",
         "historyLoaded": "會話歷史已載入"
@@ -645,5 +646,125 @@
         "toggleAutoSubmit": "切換自動提交",
         "toggleNotification": "切換通知",
         "toggleAudioNotification": "切換音效通知"
+    },
+    "remoteChannel": {
+        "title": "📡 遠端溝通",
+        "privacyNotice": "隱私提示：啟用後，AI 摘要和你在遠端的回覆會經由 Discord 傳輸並保存。請只使用你信任的私人伺服器和頻道。",
+        "enable": {
+            "label": "啟用遠端溝通",
+            "description": "開啟後，每次請求回饋時都會同步發到 Discord；你在 Discord 裡回覆，也能讓 AI 繼續往下走。開啟前需要先通過「測試連線」。"
+        },
+        "provider": {
+            "label": "遠端渠道",
+            "description": "目前僅支援 Discord。",
+            "options": {
+                "discord": "Discord"
+            }
+        },
+        "token": {
+            "label": "Bot Token",
+            "description": "Discord 機器人的權杖，儲存後不會再顯示。留空表示保持原本的權杖。",
+            "placeholder": "貼上 Bot Token",
+            "placeholderSet": "已設定（留空則保持不變）"
+        },
+        "forumChannel": {
+            "label": "論壇頻道 ID",
+            "description": "用來接收訊息的 Discord 論壇頻道（Forum）。在 Discord 裡開啟開發者模式後，右鍵頻道選擇「複製頻道 ID」。",
+            "placeholder": "例如 123456789012345678"
+        },
+        "allowedUsers": {
+            "label": "允許回覆的使用者 ID",
+            "description": "只有這些使用者的回覆會被採用，至少填寫一個。多個 ID 用逗號或空格分隔。",
+            "placeholder": "例如 123456789012345678, 234567890123456789"
+        },
+        "buttons": {
+            "save": "儲存",
+            "test": "測試連線"
+        },
+        "verification": {
+            "effective": "✅ 已驗證並生效：之後的每次回饋請求都會同步到遠端。",
+            "verifiedDisabled": "✅ 已驗證，目前未啟用。",
+            "unverified": "⚠️ 設定尚未驗證，請先點擊「測試連線」。",
+            "incomplete": "請先填寫完整設定（Token、論壇頻道 ID、允許的使用者 ID）。"
+        },
+        "messages": {
+            "saved": "已儲存。",
+            "savedNeedsTest": "已儲存。設定有變動，需要重新測試連線後才能啟用。",
+            "enabled": "已啟用遠端溝通。",
+            "disabled": "已關閉遠端溝通。",
+            "loadFailed": "讀取遠端設定失敗：{reason}",
+            "failed": "操作失敗：{reason}"
+        },
+        "check": {
+            "title": "連線測試",
+            "steps": {
+                "token": "Bot Token 有效",
+                "channel": "論壇頻道可用",
+                "post": "能在頻道裡發文",
+                "reply": "收到你的回覆",
+                "archive": "封存測試貼文"
+            },
+            "running": "正在測試…",
+            "replyPrompt": "請到 Discord 裡剛建立的測試貼文回覆任意文字，還剩 {seconds} 秒。",
+            "passed": "✅ 測試通過，現在可以啟用遠端溝通了。",
+            "passedNotSaved": "測試通過，但測試期間設定被修改了，需要重新測試。",
+            "passedSaveFailed": "測試通過，但儲存驗證結果失敗，請重試。",
+            "failed": "❌ 測試未通過，卡在「{step}」：{reason}",
+            "pollFailed": "無法取得測試進度，請稍後重試。"
+        },
+        "status": {
+            "off": "遠端：未啟用",
+            "offWithReason": "遠端：未生效（{reason}）",
+            "connecting": "遠端：連線中…",
+            "waiting": "遠端：等待回覆",
+            "unavailable": "遠端：無法使用（{reason}）",
+            "answered_remotely": "遠端：已在遠端答覆",
+            "answered_locally": "遠端：已在本機答覆",
+            "tooltip": "點擊開啟遠端設定"
+        },
+        "reasons": {
+            "not_verified": "設定尚未通過測試",
+            "token_required": "缺少 Bot Token",
+            "channel_required": "缺少論壇頻道 ID",
+            "allowlist_required": "缺少允許的使用者 ID",
+            "unsupported_provider": "不支援的遠端渠道",
+            "invalid_token": "Token 格式不正確",
+            "invalid_channel_id": "頻道 ID 必須是 17 到 20 位數字",
+            "invalid_user_id": "使用者 ID 必須是 17 到 20 位數字",
+            "invalid_payload": "提交的內容無效",
+            "payload_too_large": "提交的內容過大",
+            "check_in_progress": "已有測試正在進行",
+            "config_changed": "測試期間設定被修改",
+            "save_failed": "儲存失敗",
+            "unknown_run": "找不到該測試紀錄",
+            "forbidden": "請求被拒絕（只允許本機存取）",
+            "unavailable": "目前視窗不支援遠端設定",
+            "request_failed": "請求失敗",
+            "auth_failed": "Token 無效或已被撤銷",
+            "missing_permission": "機器人缺少權限（檢視頻道、發文、傳送訊息、管理貼文）",
+            "not_found": "找不到該頻道，請檢查頻道 ID，以及機器人是否已加入伺服器",
+            "not_forum": "該頻道不是論壇頻道",
+            "forum_tag_required": "該論壇要求發文必須選標籤，無法自動處理",
+            "message_content": "讀不到訊息文字，請在 Discord 開發者後台開啟 Message Content Intent",
+            "no_text": "訊息裡沒有可讀的文字",
+            "timeout": "等待回覆逾時",
+            "rate_limited": "Discord 限流，請稍後再試",
+            "server_error": "Discord 服務暫時異常",
+            "network_error": "網路不通，無法連線到 Discord",
+            "bad_request": "請求被 Discord 拒絕",
+            "bad_response": "Discord 回傳了無法辨識的內容",
+            "not_open": "遠端會話尚未建立",
+            "too_large": "附件過大",
+            "bad_host": "附件來源不受信任",
+            "download_failed": "附件下載失敗",
+            "submit_failed": "提交遠端回覆失敗",
+            "internal_error": "內部錯誤",
+            "cancelled": "測試被取消",
+            "unknown": "未知原因（{code}）"
+        },
+        "standalone": {
+            "title": "遠端溝通設定",
+            "hint": "這裡只修改遠端溝通的設定，不會產生回饋請求。設定好後關閉視窗即可。"
+        }
     }
 }

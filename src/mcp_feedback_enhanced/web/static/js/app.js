@@ -25,6 +25,7 @@
 
         // 模組管理器
         this.tabManager = null;
+        this.remoteStatusBadge = null;
         this.webSocketManager = null;
         this.connectionMonitor = null;
         this.sessionManager = null;
@@ -279,6 +280,25 @@
                             };
                             self.webSocketManager.updateSessionTimeoutSettings(timeoutSettings);
                         }
+
+                        // 17.5 Remote communication status badge. The element only exists in
+                        // feedback-cli windows, so the handle is null elsewhere. It must be
+                        // created before the WebSocket connects: the server replays the latest
+                        // status right after the connection is established.
+                        self.remoteStatusBadge = window.MCPFeedback.RemoteStatusBadge
+                            ? window.MCPFeedback.RemoteStatusBadge.attach({
+                                onActivate: function() {
+                                    self.uiManager.switchTab('settings');
+                                    // The card sits near the end of the long settings tab, far
+                                    // below the fold of a default desktop window: scroll to it so
+                                    // that clicking the badge visibly lands on the remote settings.
+                                    var remoteCard = document.getElementById('remoteSettingsCard');
+                                    if (remoteCard && typeof remoteCard.scrollIntoView === 'function') {
+                                        remoteCard.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                                    }
+                                }
+                            })
+                            : null;
 
                         // 18. 建立 WebSocket 連接
                         self.webSocketManager.connect();
@@ -712,6 +732,16 @@
      * 處理 WebSocket 訊息（防抖版本）
      */
     FeedbackApp.prototype.handleWebSocketMessage = function(data) {
+        // Remote status must be handled before the debounce below: the debounce keeps only
+        // the last message of a burst, and a status update arriving right after
+        // connection_established must not be swallowed.
+        if (data.type === 'remote_status') {
+            if (this.remoteStatusBadge) {
+                this.remoteStatusBadge.update(data.status);
+            }
+            return;
+        }
+
         // 命令輸出相關的訊息不應該使用防抖，需要立即處理
         if (data.type === 'command_output' || data.type === 'command_complete' || data.type === 'command_error') {
             this._originalHandleWebSocketMessage(data);

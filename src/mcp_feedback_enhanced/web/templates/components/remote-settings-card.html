@@ -1,0 +1,115 @@
+{#
+遠端溝通設定卡片（共用組件）
+============================
+
+Shared by the settings tab of feedback-cli windows (feedback.html) and by the standalone
+page (remote_settings.html). Only markup lives here: all behavior is in
+static/js/modules/remote/remote-settings-card.js, which stays idle when this element is
+absent. Dynamic text is written with textContent only (no server text goes into HTML).
+#}
+<div class="settings-card remote-settings-card" id="remoteSettingsCard">
+    <div class="settings-card-header">
+        <h3 class="settings-card-title" data-i18n="remoteChannel.title">📡 遠端溝通</h3>
+    </div>
+    <div class="settings-card-body">
+        <!-- Third-party data flow notice -->
+        <div class="remote-privacy-notice" data-i18n="remoteChannel.privacyNotice">
+            隱私提示：啟用後，AI 摘要和你在遠端的回覆會經由 Discord 傳輸並保存。請只使用你信任的私人伺服器和頻道。
+        </div>
+
+        <!-- Verification / effective state -->
+        <div class="remote-verification" id="remoteVerification" data-state="incomplete" role="status" aria-live="polite"></div>
+
+        <!-- Enable toggle -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <div class="setting-label" data-i18n="remoteChannel.enable.label">啟用遠端溝通</div>
+                <div class="setting-description" data-i18n="remoteChannel.enable.description">
+                    開啟後，每次請求回饋時都會同步發到 Discord；你在 Discord 裡回覆，也能讓 AI 繼續往下走。開啟前需要先通過「測試連線」。
+                </div>
+            </div>
+            <div class="setting-control">
+                <button type="button" id="remoteEnableToggle" class="toggle-btn" role="switch"
+                        aria-checked="false" data-i18n-aria-label="remoteChannel.enable.label">
+                    <span class="toggle-slider"></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Provider -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <label class="setting-label" for="remoteProvider" data-i18n="remoteChannel.provider.label">遠端渠道</label>
+                <div class="setting-description" data-i18n="remoteChannel.provider.description">目前僅支援 Discord。</div>
+            </div>
+            <div class="setting-control">
+                <select id="remoteProvider" class="form-select">
+                    <option value="discord" data-i18n="remoteChannel.provider.options.discord">Discord</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Bot token (write-only: never filled in from the server) -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <label class="setting-label" for="remoteToken" data-i18n="remoteChannel.token.label">Bot Token</label>
+                <div class="setting-description" data-i18n="remoteChannel.token.description">
+                    Discord 機器人的權杖，儲存後不會再顯示。留空表示保持原本的權杖。
+                </div>
+            </div>
+            <div class="setting-control">
+                {# The placeholder depends on whether a token is stored, so the script sets it. #}
+                <input type="password" id="remoteToken" class="form-input" autocomplete="new-password"
+                       spellcheck="false" autocapitalize="off" maxlength="256">
+            </div>
+        </div>
+
+        <!-- Forum channel -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <label class="setting-label" for="remoteForumChannelId" data-i18n="remoteChannel.forumChannel.label">論壇頻道 ID</label>
+                <div class="setting-description" data-i18n="remoteChannel.forumChannel.description">
+                    用來接收訊息的 Discord 論壇頻道（Forum）。在 Discord 裡開啟開發者模式後，右鍵頻道選擇「複製頻道 ID」。
+                </div>
+            </div>
+            <div class="setting-control">
+                <input type="text" id="remoteForumChannelId" class="form-input" inputmode="numeric"
+                       autocomplete="off" spellcheck="false" maxlength="20"
+                       data-i18n-placeholder="remoteChannel.forumChannel.placeholder">
+            </div>
+        </div>
+
+        <!-- Allowlist -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <label class="setting-label" for="remoteAllowedUsers" data-i18n="remoteChannel.allowedUsers.label">允許回覆的使用者 ID</label>
+                <div class="setting-description" data-i18n="remoteChannel.allowedUsers.description">
+                    只有這些使用者的回覆會被採用，至少填寫一個。多個 ID 用逗號或空格分隔。
+                </div>
+            </div>
+            <div class="setting-control">
+                <input type="text" id="remoteAllowedUsers" class="form-input" autocomplete="off"
+                       spellcheck="false" data-i18n-placeholder="remoteChannel.allowedUsers.placeholder">
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="remote-actions">
+            <button type="button" id="remoteSaveBtn" class="btn btn-secondary">
+                <span data-i18n="remoteChannel.buttons.save">儲存</span>
+            </button>
+            <button type="button" id="remoteTestBtn" class="btn btn-primary">
+                <span data-i18n="remoteChannel.buttons.test">測試連線</span>
+            </button>
+        </div>
+        <div class="remote-message" id="remoteMessage" data-kind="info" role="status" aria-live="polite"></div>
+
+        <!-- Connection test progress -->
+        <div class="remote-check" id="remoteCheckPanel" hidden>
+            <div class="remote-check-title" data-i18n="remoteChannel.check.title">連線測試</div>
+            <ol class="remote-check-steps" id="remoteCheckSteps"></ol>
+            <div class="remote-check-hint" id="remoteCheckHint" hidden></div>
+            <div class="remote-check-result" id="remoteCheckResult" data-kind="info" hidden></div>
+        </div>
+    </div>
+</div>

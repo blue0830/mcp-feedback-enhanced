@@ -1,0 +1,288 @@
+/**
+ * Remote communication styles
+ * ===========================
+ *
+ * Covers the shared settings card (settings tab and standalone page), the standalone
+ * page layout and the top bar status badge. Builds on the variables and classes of
+ * styles.css (settings-card, setting-item, form-input, toggle-btn, btn).
+ */
+
+/* ===== Settings card ===== */
+
+.remote-settings-card [hidden] {
+    display: none !important;
+}
+
+/*
+ * The feedback window keeps a fixed connection bar on top and a collapsed stats bar at the
+ * bottom. Scrolling the card or its test panel into view must leave room for both, otherwise
+ * the card title or the "reply in Discord now" prompt ends up underneath them.
+ */
+.remote-settings-card,
+.remote-settings-card .remote-check {
+    scroll-margin-top: 56px;
+    scroll-margin-bottom: 56px;
+}
+
+.remote-settings-card .remote-privacy-notice {
+    background: rgba(255, 152, 0, 0.08);
+    border: 1px solid rgba(255, 152, 0, 0.35);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+}
+
+.remote-settings-card .remote-verification {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 8px 12px;
+    margin-bottom: 4px;
+}
+
+.remote-settings-card .remote-verification:empty {
+    display: none;
+}
+
+.remote-settings-card .remote-verification[data-state="effective"],
+.remote-settings-card .remote-verification[data-state="verified"] {
+    border-color: var(--success-color);
+    color: var(--success-color);
+}
+
+.remote-settings-card .remote-verification[data-state="unverified"] {
+    border-color: var(--warning-color);
+    color: var(--warning-color);
+}
+
+/* Fields wrap under their description on narrow windows instead of overflowing. */
+.remote-settings-card .setting-item {
+    flex-wrap: wrap;
+    gap: 12px 16px;
+}
+
+.remote-settings-card .setting-info {
+    min-width: 220px;
+}
+
+.remote-settings-card label.setting-label {
+    display: block;
+}
+
+.remote-settings-card .setting-control {
+    flex-wrap: wrap;
+}
+
+.remote-settings-card .form-input {
+    width: 320px;
+    max-width: 100%;
+}
+
+.remote-settings-card .form-select {
+    min-width: 160px;
+}
+
+.remote-settings-card button:disabled,
+.remote-settings-card input:disabled,
+.remote-settings-card select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.remote-settings-card .remote-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.remote-settings-card .remote-message {
+    font-size: 14px;
+    line-height: 1.5;
+    margin-top: 12px;
+    color: var(--text-secondary);
+}
+
+.remote-settings-card .remote-message:empty {
+    display: none;
+}
+
+.remote-settings-card .remote-message[data-kind="success"],
+.remote-settings-card .remote-check-result[data-kind="success"] {
+    color: var(--success-color);
+}
+
+.remote-settings-card .remote-message[data-kind="warning"],
+.remote-settings-card .remote-check-result[data-kind="warning"] {
+    color: var(--warning-color);
+}
+
+.remote-settings-card .remote-message[data-kind="error"],
+.remote-settings-card .remote-check-result[data-kind="error"] {
+    color: var(--error-color);
+}
+
+/* ===== Connection test progress ===== */
+
+.remote-settings-card .remote-check {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin-top: 16px;
+    padding: 12px 14px;
+}
+
+.remote-settings-card .remote-check-title {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.remote-settings-card .remote-check-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+}
+
+.remote-settings-card .remote-check-step {
+    align-items: baseline;
+    display: flex;
+    flex-wrap: wrap;
+    font-size: 14px;
+    gap: 4px 8px;
+}
+
+.remote-settings-card .remote-check-icon {
+    flex: 0 0 18px;
+    text-align: center;
+}
+
+.remote-settings-card .remote-check-step[data-state="ok"] .remote-check-icon {
+    color: var(--success-color);
+}
+
+.remote-settings-card .remote-check-step[data-state="failed"] .remote-check-icon,
+.remote-settings-card .remote-check-step[data-state="failed"] .remote-check-reason {
+    color: var(--error-color);
+}
+
+.remote-settings-card .remote-check-step[data-state="running"] .remote-check-icon {
+    animation: pulse 1.2s infinite;
+}
+
+.remote-settings-card .remote-check-step[data-state="pending"],
+.remote-settings-card .remote-check-step[data-state="skipped"] {
+    opacity: 0.55;
+}
+
+.remote-settings-card .remote-check-detail,
+.remote-settings-card .remote-check-reason {
+    font-size: 12px;
+}
+
+.remote-settings-card .remote-check-detail {
+    color: var(--text-secondary);
+}
+
+.remote-settings-card .remote-check-hint {
+    background: rgba(0, 122, 204, 0.12);
+    border-left: 3px solid var(--accent-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 14px;
+    margin-top: 12px;
+    padding: 8px 12px;
+}
+
+.remote-settings-card .remote-check-result {
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    margin-top: 12px;
+}
+
+/* ===== Standalone page ===== */
+
+.remote-settings-page .container {
+    margin: 0 auto;
+    max-width: 820px;
+    padding: 24px 16px 40px;
+}
+
+.remote-settings-page .remote-settings-header {
+    margin-bottom: 20px;
+}
+
+.remote-settings-page .remote-settings-title {
+    color: var(--text-primary);
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 6px;
+}
+
+.remote-settings-page .remote-settings-hint {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.remote-settings-page .remote-settings-version {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-top: 6px;
+    opacity: 0.7;
+}
+
+/* ===== Top bar status badge (feedback-cli windows only) ===== */
+
+.remote-status-badge {
+    align-items: center;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: inline-flex;
+    font-family: inherit;
+    font-size: 11px;
+    gap: 4px;
+    max-width: 320px;
+    padding: 0 4px;
+    white-space: nowrap;
+}
+
+.remote-status-badge:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.remote-status-badge .remote-status-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.remote-status-badge[data-state="connecting"] {
+    color: var(--info-color);
+}
+
+.remote-status-badge[data-state="waiting"],
+.remote-status-badge[data-state="answered_remotely"] {
+    color: var(--success-color);
+}
+
+.remote-status-badge[data-state="unavailable"] {
+    color: var(--warning-color);
+}
+
+.remote-status-badge[data-state="connecting"] .remote-status-icon {
+    animation: pulse 1.2s infinite;
+}

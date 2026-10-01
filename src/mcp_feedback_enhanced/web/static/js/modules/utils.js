@@ -318,6 +318,7 @@
                 'session.timeout': 'Session timed out',
                 'session.cleaned': 'Session cleaned',
                 'session.feedbackSubmitted': 'Feedback submitted successfully',
+                'session.feedbackConflict': 'This request is already closed, your submission was not applied',
                 'session.userMessageRecorded': 'User message recorded',
                 'session.historySaved': 'Session history saved',
                 'session.historyLoaded': 'Session history loaded',

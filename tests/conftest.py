@@ -107,6 +107,14 @@ def test_config() -> dict[str, Any]:
 
 
 @pytest.fixture(autouse=True)
+def isolate_remote_channel_config(tmp_path, monkeypatch):
+    """Keep every test away from the developer's real remote channel configuration."""
+    monkeypatch.setenv(
+        "MCP_FEEDBACK_REMOTE_CONFIG", str(tmp_path / "isolated_remote_channel.json")
+    )
+
+
+@pytest.fixture(autouse=True)
 def setup_test_env():
     """自動設置測試環境"""
     # 設置測試環境變數

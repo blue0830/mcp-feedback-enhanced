@@ -1,9 +1,9 @@
 ## 1. Submission Arbitration Core
 
-- [ ] 1.1 Add a session-level atomic claim-and-submit API in `feedback_session.py` for web, CLI, and timeout callers.
-- [ ] 1.2 Route existing web submit and timeout completion paths to the new shared arbitration API.
-- [ ] 1.3 Enforce winner semantics (first successful commit wins) and return conflict for non-winning commits.
-- [ ] 1.4 Align session state transitions so successful submit paths enter the committed/submitted final state consistently.
+- [x] 1.1 Add a session-level atomic claim-and-submit API in `feedback_session.py` for web, CLI, and timeout callers.
+- [x] 1.2 Route existing web submit and timeout completion paths to the new shared arbitration API.
+- [x] 1.3 Enforce winner semantics (first successful commit wins) and return conflict for non-winning commits.
+- [x] 1.4 Align session state transitions so successful submit paths enter the committed/submitted final state consistently.
 
 ## 2. Registry Lifecycle and Routing
 

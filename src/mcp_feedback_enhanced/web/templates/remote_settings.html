@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN" id="html-root">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+
+    <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+
+    {#
+    Standalone remote settings page (feedback-cli --remote-settings).
+    Loads only the shared styles, i18n and the remote card modules: no session,
+    WebSocket or feedback modules, so nothing here can create or touch a session.
+    #}
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="stylesheet" href="/static/css/remote-settings.css">
+</head>
+<body class="remote-settings-page">
+    <div class="container">
+        <header class="remote-settings-header">
+            <h1 class="remote-settings-title" data-i18n="remoteChannel.standalone.title">遠端溝通設定</h1>
+            <p class="remote-settings-hint" data-i18n="remoteChannel.standalone.hint">
+                這裡只修改遠端溝通的設定，不會產生回饋請求。設定好後關閉視窗即可。
+            </p>
+            <div class="remote-settings-version">v{{ version }}</div>
+        </header>
+
+        <main class="remote-settings-main">
+            {% include 'components/remote-settings-card.html' %}
+        </main>
+    </div>
+
+    <script src="/static/js/i18n.js?v=2025010510"></script>
+    <script src="/static/js/modules/remote/remote-common.js?v=2025010510"></script>
+    <script src="/static/js/modules/remote/remote-settings-card.js?v=2025010510"></script>
+    <script src="/static/js/modules/remote/remote-settings-page.js?v=2025010510"></script>
+</body>
+</html>

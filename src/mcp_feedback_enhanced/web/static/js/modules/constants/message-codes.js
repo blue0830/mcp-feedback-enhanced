@@ -36,6 +36,7 @@
             SESSION_TIMEOUT: 'session.timeout',
             SESSION_CLEANED: 'session.cleaned',
             FEEDBACK_SUBMITTED: 'session.feedbackSubmitted',
+            FEEDBACK_CONFLICT: 'session.feedbackConflict',
             USER_MESSAGE_RECORDED: 'session.userMessageRecorded',
             HISTORY_SAVED: 'session.historySaved',
             HISTORY_LOADED: 'session.historyLoaded',

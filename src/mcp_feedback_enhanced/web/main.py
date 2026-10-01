@@ -13,9 +13,10 @@ import socket
 import threading
 import time
 import uuid
+from collections.abc import Coroutine
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -33,17 +34,26 @@ from .utils.compression_config import get_compression_manager
 from .utils.port_manager import PortManager
 
 
+_T = TypeVar("_T")
+
+
 class WebUIManager:
     """Coordinate one in-process feedback runtime for web and desktop UIs.
 
     Responsibilities:
     - create and track feedback sessions in memory;
     - host one FastAPI/uvicorn backend per process;
-    - expose browser/desktop launch helpers for the active session.
+    - expose browser/desktop launch helpers for the active session;
+    - bridge other threads/event loops to the server loop (await_on_server_loop,
+      push_remote_status), because websockets belong to the uvicorn loop;
+    - own the remote connection check service (``remote_check_service``) used by the
+      remote settings endpoints.
 
     Limitations:
     - state is process-local and not shared across processes;
-    - this manager is not a distributed multi-node session coordinator.
+    - this manager is not a distributed multi-node session coordinator;
+    - ``remote_settings_available`` is only set by CLI runtimes; MCP-hosted windows
+      keep the default False so the remote settings card stays hidden there.
     """
 
     def __init__(self, host: str = "127.0.0.1", port: int | None = None):
@@ -146,6 +156,15 @@ class WebUIManager:
         self._server_instance: uvicorn.Server | None = None
         self._server_ready_event = threading.Event()
         self._server_startup_error: Exception | None = None
+        # Event loop that runs uvicorn (and owns every session websocket); recorded by
+        # start_server() so other threads can hop onto it.
+        self._server_loop: asyncio.AbstractEventLoop | None = None
+        # Set by the CLI runtimes (read lazily per request) to expose the remote settings
+        # endpoints and card; stays False for MCP-hosted windows.
+        self.remote_settings_available = False
+        # Runs the remote "test connection" flow; created by the remote routes (which
+        # register themselves during route setup below).
+        self.remote_check_service: Any = None
 
         # 初始化標記，用於追蹤異步初始化狀態
         self._initialization_complete = False
@@ -349,7 +368,14 @@ class WebUIManager:
 
         # 創建新會話
         session_id = str(uuid.uuid4())
-        session = WebFeedbackSession(session_id, project_directory, summary)
+        # The session closes the desktop window through this manager, never through the
+        # global manager (which would spawn a stray default manager in CLI runs).
+        session = WebFeedbackSession(
+            session_id,
+            project_directory,
+            summary,
+            close_desktop_callback=self.close_desktop_app,
+        )
 
         # 如果有舊會話，處理狀態轉換和清理
         if old_session:
@@ -490,6 +516,84 @@ class WebUIManager:
         except Exception as e:
             debug_log(f"廣播消息失敗: {e}")
 
+    async def await_on_server_loop(
+        self, coro: Coroutine[Any, Any, _T], timeout: float = 10.0
+    ) -> _T:
+        """Run ``coro`` on the web server's event loop and await its result from any loop.
+
+        Session websockets belong to the uvicorn loop, so anything that writes to them
+        from another thread/loop (for example the CLI main loop) must hop onto it.
+
+        Raises:
+            RuntimeError: the server loop is not running (the coroutine is closed).
+            TimeoutError: the coroutine did not finish in time (it gets cancelled).
+        """
+        loop = self._server_loop
+        if loop is None or loop.is_closed() or not loop.is_running():
+            coro.close()
+            raise RuntimeError("Web server event loop is not running")
+
+        try:
+            current_loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if current_loop is loop:
+            # Already on the server loop: awaiting directly avoids a needless hop.
+            return await asyncio.wait_for(coro, timeout)
+
+        try:
+            future = asyncio.run_coroutine_threadsafe(coro, loop)
+        except RuntimeError as schedule_error:
+            coro.close()  # The loop closed in between; avoid a never-awaited warning
+            raise RuntimeError(
+                "Web server event loop is not running"
+            ) from schedule_error
+        return await asyncio.wait_for(asyncio.wrap_future(future), timeout)
+
+    async def shutdown_remote_checks(self, timeout: float = 4.0) -> None:
+        """Cancel a running remote connection check so its test post gets archived.
+
+        Bounded and exception-free: called from CLI shutdown paths that must finish.
+        """
+        service = self.remote_check_service
+        if service is None:
+            return
+        try:
+            await self.await_on_server_loop(service.aclose(), timeout=timeout)
+        except Exception as check_error:
+            debug_log(f"關閉遠端連線檢查失敗（忽略）: {type(check_error).__name__}")
+
+    def push_remote_status(
+        self, session: WebFeedbackSession, payload: dict[str, Any]
+    ) -> None:
+        """Store the remote channel status on the session and push it to the page.
+
+        Thread-safe and best effort: pages that connect later get the stored status
+        replayed by the websocket endpoint, and a failed push is only logged.
+        """
+        session.remote_status = payload
+        loop = self._server_loop
+        if loop is None or loop.is_closed() or not loop.is_running():
+            return
+
+        async def _send() -> None:
+            # Resolve the websocket on the server loop: it may be swapped at any time.
+            websocket = session.websocket
+            if websocket is None:
+                return
+            try:
+                await websocket.send_json({"type": "remote_status", "status": payload})
+            except Exception as push_error:
+                debug_log(f"推送遠端狀態失敗: {push_error}")
+
+        send_coro = _send()
+        try:
+            asyncio.run_coroutine_threadsafe(send_coro, loop)
+        except RuntimeError as schedule_error:
+            send_coro.close()  # The loop closed in between; avoid a never-awaited warning
+            debug_log(f"排程遠端狀態推送失敗: {schedule_error}")
+
     def start_server(self):
         """啟動 Web 伺服器（支援動態端口與就緒檢測）"""
         if self.server_thread and self.server_thread.is_alive():
@@ -532,6 +636,8 @@ class WebUIManager:
                     self._server_instance = server_instance
 
                     async def serve_with_async_init(server: uvicorn.Server):
+                        # Record the server loop so other threads can hop onto it.
+                        self._server_loop = asyncio.get_running_loop()
                         server_task = asyncio.create_task(server.serve())
                         init_task = asyncio.create_task(self._init_async_components())
 
@@ -586,6 +692,9 @@ class WebUIManager:
                     )
                     debug_log(f"伺服器運行錯誤 [錯誤ID: {error_id}]: {e}")
                     break
+                finally:
+                    # The loop is closed once asyncio.run() returns or fails.
+                    self._server_loop = None
 
         self.server_thread = threading.Thread(target=run_server_with_retry, daemon=True)
         self.server_thread.start()

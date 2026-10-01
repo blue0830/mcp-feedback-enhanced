@@ -572,6 +572,7 @@
         "timeout": "Session timed out",
         "cleaned": "Session cleaned",
         "feedbackSubmitted": "Feedback submitted successfully",
+        "feedbackConflict": "This request is already closed, your submission was not applied",
         "userMessageRecorded": "User message recorded",
         "historySaved": "Session history saved ({{count}} sessions)",
         "historyLoaded": "Session history loaded"
@@ -640,5 +641,125 @@
         "toggleAutoSubmit": "Toggle auto submit",
         "toggleNotification": "Toggle notification",
         "toggleAudioNotification": "Toggle audio notification"
+    },
+    "remoteChannel": {
+        "title": "📡 Remote Communication",
+        "privacyNotice": "Privacy notice: once enabled, AI summaries and your remote replies pass through and are stored by Discord. Use only a private server and channel you trust.",
+        "enable": {
+            "label": "Enable remote communication",
+            "description": "When on, every feedback request is also sent to Discord, and a reply there lets the AI continue. The connection test must pass first."
+        },
+        "provider": {
+            "label": "Remote channel",
+            "description": "Only Discord is supported for now.",
+            "options": {
+                "discord": "Discord"
+            }
+        },
+        "token": {
+            "label": "Bot token",
+            "description": "The Discord bot's token. It is never shown again after saving; leave it empty to keep the stored one.",
+            "placeholder": "Paste the bot token",
+            "placeholderSet": "Already set (leave empty to keep it)"
+        },
+        "forumChannel": {
+            "label": "Forum channel ID",
+            "description": "The Discord forum channel that receives the messages. Turn on Developer Mode in Discord, then right-click the channel and choose \"Copy Channel ID\".",
+            "placeholder": "e.g. 123456789012345678"
+        },
+        "allowedUsers": {
+            "label": "Allowed reply user IDs",
+            "description": "Only replies from these users are accepted; at least one is required. Separate several IDs with commas or spaces.",
+            "placeholder": "e.g. 123456789012345678, 234567890123456789"
+        },
+        "buttons": {
+            "save": "Save",
+            "test": "Test connection"
+        },
+        "verification": {
+            "effective": "✅ Verified and active: every feedback request is mirrored to the remote channel.",
+            "verifiedDisabled": "✅ Verified, currently switched off.",
+            "unverified": "⚠️ Not verified yet. Click \"Test connection\" first.",
+            "incomplete": "Fill in all settings first (token, forum channel ID, allowed user IDs)."
+        },
+        "messages": {
+            "saved": "Saved.",
+            "savedNeedsTest": "Saved. The settings changed, so run the connection test again before enabling.",
+            "enabled": "Remote communication is on.",
+            "disabled": "Remote communication is off.",
+            "loadFailed": "Could not load the remote settings: {reason}",
+            "failed": "Action failed: {reason}"
+        },
+        "check": {
+            "title": "Connection test",
+            "steps": {
+                "token": "Bot token is valid",
+                "channel": "Forum channel is usable",
+                "post": "Can create a post",
+                "reply": "Received your reply",
+                "archive": "Archive the test post"
+            },
+            "running": "Testing…",
+            "replyPrompt": "Reply with any text in the test post that was just created on Discord. {seconds} s left.",
+            "passed": "✅ Test passed. You can enable remote communication now.",
+            "passedNotSaved": "The test passed, but the settings changed during the test. Run it again.",
+            "passedSaveFailed": "The test passed, but saving the result failed. Please retry.",
+            "failed": "❌ Test failed at \"{step}\": {reason}",
+            "pollFailed": "Could not read the test progress. Please try again later."
+        },
+        "status": {
+            "off": "Remote: off",
+            "offWithReason": "Remote: inactive ({reason})",
+            "connecting": "Remote: connecting…",
+            "waiting": "Remote: waiting for reply",
+            "unavailable": "Remote: unavailable ({reason})",
+            "answered_remotely": "Remote: answered remotely",
+            "answered_locally": "Remote: answered locally",
+            "tooltip": "Click to open the remote settings"
+        },
+        "reasons": {
+            "not_verified": "the settings have not passed the test",
+            "token_required": "bot token is missing",
+            "channel_required": "forum channel ID is missing",
+            "allowlist_required": "allowed user IDs are missing",
+            "unsupported_provider": "unsupported remote channel",
+            "invalid_token": "the token format is invalid",
+            "invalid_channel_id": "the channel ID must be 17 to 20 digits",
+            "invalid_user_id": "user IDs must be 17 to 20 digits",
+            "invalid_payload": "the submitted data is invalid",
+            "payload_too_large": "the submitted data is too large",
+            "check_in_progress": "a test is already running",
+            "config_changed": "the settings changed during the test",
+            "save_failed": "saving failed",
+            "unknown_run": "that test run was not found",
+            "forbidden": "request refused (local access only)",
+            "unavailable": "this window does not support remote settings",
+            "request_failed": "the request failed",
+            "auth_failed": "the token is invalid or was revoked",
+            "missing_permission": "the bot lacks permissions (view channel, create posts, send messages, manage threads)",
+            "not_found": "channel not found; check the channel ID and that the bot joined the server",
+            "not_forum": "that channel is not a forum channel",
+            "forum_tag_required": "the forum requires a tag on new posts and none could be chosen",
+            "message_content": "message text is unreadable; enable the Message Content Intent in the Discord developer portal",
+            "no_text": "the message has no readable text",
+            "timeout": "timed out waiting for a reply",
+            "rate_limited": "Discord is rate limiting; try again later",
+            "server_error": "Discord is having a temporary problem",
+            "network_error": "network unreachable; cannot connect to Discord",
+            "bad_request": "Discord rejected the request",
+            "bad_response": "Discord returned something unexpected",
+            "not_open": "the remote conversation is not open yet",
+            "too_large": "the attachment is too large",
+            "bad_host": "the attachment source is not trusted",
+            "download_failed": "the attachment download failed",
+            "submit_failed": "submitting the remote reply failed",
+            "internal_error": "internal error",
+            "cancelled": "the test was cancelled",
+            "unknown": "unknown reason ({code})"
+        },
+        "standalone": {
+            "title": "Remote Communication Settings",
+            "hint": "This page only edits the remote communication settings and creates no feedback request. Close the window when you are done."
+        }
     }
 }

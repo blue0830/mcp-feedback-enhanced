@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from ... import __version__
 from ...debug import web_debug_log as debug_log
 from ..constants import get_message_code as get_msg_code
+from .remote_routes import setup_remote_routes
 
 
 if TYPE_CHECKING:
@@ -86,6 +87,8 @@ def setup_routes(manager: "WebUIManager"):
                 "version": __version__,
                 "has_session": True,
                 "layout_mode": layout_mode,
+                # Read per request: only feedback-cli windows show the remote card.
+                "remote_settings_available": manager.remote_settings_available,
             },
         )
 
@@ -320,6 +323,13 @@ def setup_routes(manager: "WebUIManager"):
                     {"type": "status_update", "status_info": session.get_status_info()}
                 )
                 debug_log("已發送當前會話狀態到前端")
+
+            # Replay the remote channel status so a page that connects after the status
+            # was published still shows the right badge.
+            if session.remote_status:
+                await websocket.send_json(
+                    {"type": "remote_status", "status": session.remote_status}
+                )
 
         except Exception as e:
             debug_log(f"發送連接確認失敗: {e}")
@@ -626,6 +636,10 @@ def setup_routes(manager: "WebUIManager"):
                 },
             )
 
+    # Remote settings page and endpoints; they answer 404 unless the window is hosted
+    # by feedback-cli, so registering them here is safe for MCP-hosted windows too.
+    setup_remote_routes(manager)
+
 
 async def handle_websocket_message(manager: "WebUIManager", session, data: dict):
     """處理 WebSocket 消息"""
@@ -675,8 +689,14 @@ async def handle_websocket_message(manager: "WebUIManager", session, data: dict)
     elif message_type == "user_timeout":
         # 用戶設置的超時已到
         debug_log(f"收到用戶超時通知: {session.session_id}")
-        # 清理會話資源
-        await session._cleanup_resources_on_timeout()
+        # Go through the arbitration: if a reply already won, the page-side timeout is
+        # ignored (cleaning up would otherwise wipe the submitted data).
+        claim = session.claim_user_timeout()
+        if claim.accepted:
+            # Clean up the session resources.
+            await session._cleanup_resources_on_timeout()
+        else:
+            debug_log(f"用戶超時被忽略，會話結果已由 {claim.source} 決定")
         # 重構：不再自動停止服務器，保持服務器運行以支援持久性
 
     elif message_type == "pong":

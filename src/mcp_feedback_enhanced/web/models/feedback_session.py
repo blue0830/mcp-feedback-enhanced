@@ -11,11 +11,13 @@ Web 回饋會話模型
 
 import asyncio
 import base64
+import os
 import shlex
 import subprocess
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -50,6 +52,37 @@ class CleanupReason(Enum):
     MANUAL = "manual"  # 手動清理
     ERROR = "error"  # 錯誤清理
     SHUTDOWN = "shutdown"  # 系統關閉清理
+
+
+# Outcome sources recorded by the first-success arbitration of WebFeedbackSession.
+SOURCE_WEB = "web"  # Submitted from the local web/desktop page
+SOURCE_WAIT_TIMEOUT = "wait_timeout"  # The wait_for_feedback() deadline was reached
+SOURCE_USER_TIMEOUT = "user_timeout"  # The user-configured session timeout fired
+SOURCE_CLEANUP = "cleanup"  # The session was torn down before an outcome was decided
+# Remote channel replies use the free-form source "remote:<provider>"; the prefix is owned
+# by mcp_feedback_enhanced.remote so this module stays independent of it.
+
+# Rejection reasons carried by CommitResult.reason.
+REASON_ALREADY_DECIDED = "already_decided"  # Another source already owns the outcome
+REASON_INVALID = "invalid"  # The payload failed validation; ownership stays free
+REASON_CLOSED = "closed"  # The session already reached a terminal status
+
+
+@dataclass(frozen=True)
+class CommitResult:
+    """Outcome of one arbitration attempt against a session.
+
+    Responsibility:
+    - tell the caller whether it won the session outcome and, if not, who did.
+
+    Notes:
+    - ``source`` is the caller's own source when ``accepted`` is True, otherwise the
+      source that already owns the outcome (``None`` for invalid payloads).
+    """
+
+    accepted: bool
+    source: str | None
+    reason: str | None = None
 
 
 # 常數定義
@@ -117,7 +150,27 @@ def _safe_parse_command(command: str) -> list[str]:
 
 
 class WebFeedbackSession:
-    """Web 回饋會話管理"""
+    """One feedback request shown to the user, plus the arbitration of its single outcome.
+
+    Responsibilities:
+    - hold the summary, feedback, images and logs of one request and its one-way status flow;
+    - decide the outcome exactly once ("first success wins"): a feedback submission from
+      any source (web page, remote channel) or a timeout claim (wait deadline, user-set
+      timeout) is accepted only while nothing has been decided yet;
+    - close the owning desktop window through an injected callback after a web submission.
+
+    Limitations:
+    - arbitration state is process-local; commit_feedback() and claim_timeout() are
+      thread-safe, but submit_feedback() must run on the event loop that owns ``websocket``;
+    - cleanup seals the outcome (late submissions are rejected), except the
+      websocket-preserving cleanup used when a newer session replaces this one.
+
+    Notes:
+    - a payload that fails validation never reserves the outcome, only a complete
+      success does;
+    - the desktop window is closed through ``close_desktop_callback`` and never through
+      a global manager, which would create a stray default WebUIManager in CLI runs.
+    """
 
     def __init__(
         self,
@@ -126,6 +179,8 @@ class WebFeedbackSession:
         summary: str,
         auto_cleanup_delay: int = 3600,
         max_idle_time: int = 1800,
+        *,
+        close_desktop_callback: Callable[[], None] | None = None,
     ):
         self.session_id = session_id
         self.project_directory = project_directory
@@ -172,6 +227,15 @@ class WebFeedbackSession:
         self.user_timeout_enabled = False
         self.user_timeout_seconds = 3600  # 預設 1 小時
         self.user_timeout_timer: threading.Timer | None = None
+
+        # Arbitration state (first success wins); every write goes through _commit_lock.
+        self._commit_lock = threading.Lock()
+        self.committed_source: str | None = None  # Who owns the outcome (None = open)
+        self.feedback_source: str | None = None  # Set only when the outcome is feedback
+        self._close_desktop_callback = close_desktop_callback
+        # Latest remote channel status pushed by the CLI runtime; replayed to pages
+        # that connect after the status was published.
+        self.remote_status: dict[str, Any] | None = None
 
         # 確保臨時目錄存在
         TEMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -449,15 +513,119 @@ class WebFeedbackSession:
 
             def timeout_handler():
                 debug_log(f"用戶設定的超時已到: {self.session_id}")
-                # 設置超時標誌
-                self.status = SessionStatus.TIMEOUT
-                self.status_message = "用戶設定的會話超時"
-                # 設置完成事件，讓 wait_for_feedback 結束等待
-                self.feedback_completed.set()
+                # Go through the arbitration: if a reply already won, this timer is a no-op.
+                # On success it also sets feedback_completed so wait_for_feedback() wakes up.
+                self.claim_user_timeout()
 
             self.user_timeout_timer = threading.Timer(timeout_seconds, timeout_handler)
+            # Daemon so a pending user timeout never keeps the CLI process alive.
+            self.user_timeout_timer.daemon = True
             self.user_timeout_timer.start()
             debug_log(f"已啟動用戶超時計時器: {timeout_seconds}秒")
+
+    @staticmethod
+    def effective_wait_timeout(timeout: int) -> int:
+        """Return the real wait deadline in seconds for a caller-side timeout.
+
+        It ends slightly before the caller's own timeout so the session decides first
+        and boundary races are avoided. Also used to show the remaining time to users.
+        """
+        if timeout <= 30:
+            return max(timeout - 1, 5)  # Short timeouts: 1s earlier, at least 5s
+        return timeout - 5  # Long timeouts: 5s earlier
+
+    def commit_feedback(
+        self,
+        feedback: object,
+        images: object,
+        settings: dict[str, Any] | None,
+        source: str,
+    ) -> CommitResult:
+        """Atomically claim the session outcome as a feedback submission.
+
+        Thread-safe and side-effect free towards the page, so any thread may call it.
+        Only a complete success reserves the outcome: invalid payloads and closed
+        sessions are rejected without consuming the first-success slot.
+
+        ``feedback`` and ``images`` are typed loosely on purpose: the web path forwards
+        them straight from untrusted websocket JSON, so they are validated here.
+        """
+        if not isinstance(feedback, str) or not isinstance(images, list):
+            return CommitResult(False, None, REASON_INVALID)
+
+        with self._commit_lock:
+            if self.committed_source is not None:
+                return CommitResult(
+                    False, self.committed_source, REASON_ALREADY_DECIDED
+                )
+            if self.is_terminal():
+                return CommitResult(False, None, REASON_CLOSED)
+
+            # Settings first: image processing reads the size limit from them. Nothing is
+            # written to the session until processing succeeded.
+            new_settings = settings or {}
+            processed_images = self._process_images(images, new_settings)
+
+            self.feedback_result = feedback
+            self.settings = new_settings
+            self.images = processed_images
+            self.committed_source = source
+            self.feedback_source = source
+            self._enter_submitted_state()
+            # Wake up wait_for_feedback() only after the outcome is fully written.
+            self.feedback_completed.set()
+
+        return CommitResult(True, source)
+
+    def claim_timeout(self, source: str, message: str | None = None) -> CommitResult:
+        """Atomically claim the session outcome as a timeout.
+
+        Thread-safe; the user-timeout timer thread and the event loop both call it. A
+        session that already has an outcome is left untouched.
+        """
+        with self._commit_lock:
+            if self.committed_source is not None:
+                return CommitResult(
+                    False, self.committed_source, REASON_ALREADY_DECIDED
+                )
+
+            self.committed_source = source
+            self.status = SessionStatus.TIMEOUT
+            if message:
+                self.status_message = message
+            self.last_activity = time.time()
+            # Let wait_for_feedback() stop waiting.
+            self.feedback_completed.set()
+
+        return CommitResult(True, source)
+
+    def claim_user_timeout(self) -> CommitResult:
+        """Claim the outcome as the user-configured session timeout (timer or page)."""
+        return self.claim_timeout(SOURCE_USER_TIMEOUT, "用戶設定的會話超時")
+
+    def _seal_outcome(self, source: str) -> None:
+        """Mark the outcome as decided so later submissions are rejected as conflicts."""
+        with self._commit_lock:
+            if self.committed_source is None:
+                self.committed_source = source
+
+    def _enter_submitted_state(self) -> None:
+        """Move the status to FEEDBACK_SUBMITTED even if the page never activated the session."""
+        # next_step() is a one-way chain WAITING -> ACTIVE -> FEEDBACK_SUBMITTED, so a
+        # session still in WAITING needs two hops.
+        if self.status == SessionStatus.WAITING:
+            self.next_step()
+        if self.status == SessionStatus.ACTIVE:
+            self.next_step("已送出反饋，等待下次 MCP 調用")
+
+    def _build_feedback_result(self) -> dict[str, Any]:
+        """Build the result dict returned by wait_for_feedback()."""
+        return {
+            "logs": "\n".join(self.command_logs),
+            "interactive_feedback": self.feedback_result or "",
+            "images": self.images,
+            "settings": self.settings,
+        }
 
     async def wait_for_feedback(self, timeout: int = 600) -> dict[str, Any]:
         """
@@ -471,11 +639,7 @@ class WebFeedbackSession:
         """
         try:
             # 使用比 MCP 超時稍短的時間（提前處理，避免邊界競爭）
-            # 對於短超時（<30秒），提前1秒；對於長超時，提前5秒
-            if timeout <= 30:
-                actual_timeout = max(timeout - 1, 5)  # 短超時提前1秒，最少5秒
-            else:
-                actual_timeout = timeout - 5  # 長超時提前5秒
+            actual_timeout = self.effective_wait_timeout(timeout)
             debug_log(
                 f"會話 {self.session_id} 開始等待回饋，超時時間: {actual_timeout} 秒（原始: {timeout} 秒）"
             )
@@ -489,18 +653,23 @@ class WebFeedbackSession:
 
             if completed:
                 # 檢查是否是用戶設定的超時
-                if self.status == SessionStatus.TIMEOUT and self.user_timeout_enabled:
+                if self.committed_source == SOURCE_USER_TIMEOUT or (
+                    self.status == SessionStatus.TIMEOUT and self.user_timeout_enabled
+                ):
                     debug_log(f"會話 {self.session_id} 因用戶設定超時而結束")
                     await self._cleanup_resources_on_timeout()
                     raise TimeoutError("會話已因用戶設定的超時而關閉")
 
                 debug_log(f"會話 {self.session_id} 收到用戶回饋")
-                return {
-                    "logs": "\n".join(self.command_logs),
-                    "interactive_feedback": self.feedback_result or "",
-                    "images": self.images,
-                    "settings": self.settings,
-                }
+                return self._build_feedback_result()
+
+            # Deadline reached: race against a late reply through the arbitration. If a
+            # reply won right at the boundary, honor it instead of timing out.
+            claim = self.claim_timeout(SOURCE_WAIT_TIMEOUT, "等待用戶回饋超時")
+            if not claim.accepted and self.feedback_source is not None:
+                debug_log(f"會話 {self.session_id} 在截止時刻收到回饋，以裁決結果為準")
+                return self._build_feedback_result()
+
             # 超時了，立即清理資源
             debug_log(
                 f"會話 {self.session_id} 在 {actual_timeout} 秒後超時，開始清理資源..."
@@ -518,60 +687,96 @@ class WebFeedbackSession:
 
     async def submit_feedback(
         self,
-        feedback: str,
-        images: list[dict[str, Any]],
+        feedback: object,
+        images: object,
         settings: dict[str, Any] | None = None,
-    ):
+        *,
+        source: str = SOURCE_WEB,
+    ) -> CommitResult:
         """
-        提交回饋和圖片
+        Submit feedback (and images) through the first-success arbitration.
+
+        Must run on the event loop that owns ``self.websocket``. Callers on another
+        thread/loop (the remote channel) call commit_feedback() directly and forward
+        notify_commit_result() through WebUIManager.await_on_server_loop().
 
         Args:
             feedback: 文字回饋
             images: 圖片列表
             settings: 圖片設定（可選）
+            source: Arbitration source, e.g. SOURCE_WEB or "remote:<provider>"
+
+        Returns:
+            CommitResult: accepted=False means another source already decided the outcome.
         """
-        self.feedback_result = feedback
-        # 先設置設定，再處理圖片（因為處理圖片時需要用到設定）
-        self.settings = settings or {}
-        self.images = self._process_images(images)
+        result = self.commit_feedback(feedback, images, settings, source)
+        await self.notify_commit_result(result, source)
+        return result
 
-        # 進入下一步：等待中 → 已提交反饋
-        self.next_step("已送出反饋，等待下次 MCP 調用")
+    async def notify_commit_result(self, result: CommitResult, source: str) -> None:
+        """Tell the attached page how an arbitration attempt ended.
 
-        self.feedback_completed.set()
+        Best effort and separate from commit_feedback(): the outcome is already decided
+        when this runs, so a failure here never changes it. Must run on the event loop
+        that owns ``self.websocket``.
+        """
+        if not result.accepted:
+            debug_log(
+                f"會話 {self.session_id} 拒絕來自 {source} 的提交: "
+                f"{result.reason}（既有來源: {result.source}）"
+            )
+            if result.reason == REASON_INVALID:
+                return  # A malformed payload is not a conflict; nothing to tell the user
+            await self._send_to_page(
+                {
+                    "type": "notification",
+                    "code": self.get_message_code("SESSION_FEEDBACK_CONFLICT"),
+                    "severity": "warning",
+                    "status": self.status.value,
+                    "winner": result.source,
+                }
+            )
+            return
 
         # 發送反饋已收到的消息給前端
-        if self.websocket:
-            try:
-                await self.websocket.send_json(
-                    {
-                        "type": "notification",
-                        "code": self.get_message_code("FEEDBACK_SUBMITTED"),
-                        "severity": "success",
-                        "status": self.status.value,
-                    }
-                )
+        notified = await self._send_to_page(
+            {
+                "type": "notification",
+                "code": self.get_message_code("FEEDBACK_SUBMITTED"),
+                "severity": "success",
+                "status": self.status.value,
+                "source": source,
+            }
+        )
 
-                # 檢查是否為桌面模式，如果是則立即關閉桌面應用程式
-                import os
+        # Desktop mode: close the desktop app as soon as the submission was delivered.
+        if notified and os.environ.get("MCP_DESKTOP_MODE", "").lower() == "true":
+            debug_log("桌面模式：反饋提交後立即關閉桌面應用程式")
+            self._close_desktop_window()
 
-                if os.environ.get("MCP_DESKTOP_MODE", "").lower() == "true":
-                    debug_log("桌面模式：反饋提交後立即關閉桌面應用程式")
+        # The WebSocket is intentionally kept open so the page stays usable afterwards.
 
-                    # 立即關閉桌面應用程式，無延遲
-                    try:
-                        from ..main import get_web_ui_manager
+    async def _send_to_page(self, payload: dict[str, Any]) -> bool:
+        """Best-effort push to the attached page; returns True when the send succeeded."""
+        if not self.websocket:
+            return False
+        try:
+            await self.websocket.send_json(payload)
+            return True
+        except Exception as e:
+            debug_log(f"發送反饋確認失敗: {e}")
+            return False
 
-                        manager = get_web_ui_manager()
-                        manager.close_desktop_app()
-                        debug_log("桌面應用程式立即關閉成功")
-                    except Exception as close_error:
-                        debug_log(f"立即關閉桌面應用程式失敗: {close_error}")
-
-            except Exception as e:
-                debug_log(f"發送反饋確認失敗: {e}")
-
-        # 重構：不再自動關閉 WebSocket，保持連接以支援頁面持久性
+    def _close_desktop_window(self) -> None:
+        """Close the desktop window through the injected callback (never a global manager)."""
+        callback = self._close_desktop_callback
+        if callback is None:
+            return
+        try:
+            callback()
+            debug_log("桌面應用程式立即關閉成功")
+        except Exception as close_error:
+            debug_log(f"立即關閉桌面應用程式失敗: {close_error}")
 
     def add_user_message(self, message_data: dict[str, Any]) -> None:
         """添加用戶消息記錄"""
@@ -591,12 +796,16 @@ class WebFeedbackSession:
             f"會話 {self.session_id} 添加用戶消息，總數: {len(self.user_messages)}"
         )
 
-    def _process_images(self, images: list[dict]) -> list[dict]:
+    def _process_images(
+        self, images: list[dict], settings: dict[str, Any] | None = None
+    ) -> list[dict]:
         """
         處理圖片數據，轉換為統一格式
 
         Args:
             images: 原始圖片數據列表
+            settings: Settings that carry the size limit; defaults to ``self.settings``
+                (commit_feedback passes the not-yet-stored settings explicitly)
 
         Returns:
             List[dict]: 處理後的圖片數據
@@ -604,7 +813,8 @@ class WebFeedbackSession:
         processed_images = []
 
         # 從設定中獲取圖片大小限制，如果沒有設定則使用預設值
-        size_limit = self.settings.get("image_size_limit", MAX_IMAGE_SIZE)
+        active_settings = self.settings if settings is None else settings
+        size_limit = active_settings.get("image_size_limit", MAX_IMAGE_SIZE)
 
         for img in images:
             try:
@@ -769,6 +979,9 @@ class WebFeedbackSession:
             return  # 避免重複清理
 
         cleanup_start_time = time.time()
+        # Seal the outcome first: a submission arriving during teardown must lose
+        # instead of writing into a session whose data is being cleared.
+        self._seal_outcome(SOURCE_CLEANUP)
         self._cleanup_done = True
 
         debug_log(f"開始清理會話 {self.session_id} 的資源，原因: {reason.value}")
@@ -971,6 +1184,17 @@ class WebFeedbackSession:
                 self.cleanup_timer.cancel()
                 self.cleanup_timer = None
                 resources_cleaned += 1
+
+            # 1.5. Cancel the user timeout timer too, so it cannot fire on a retired session.
+            if self.user_timeout_timer:
+                self.user_timeout_timer.cancel()
+                self.user_timeout_timer = None
+                resources_cleaned += 1
+
+            # 1.6. Seal the outcome, except for the websocket-preserving cleanup that runs
+            # when a newer session replaces this one (waiters are not woken in that case).
+            if not preserve_websocket:
+                self._seal_outcome(SOURCE_CLEANUP)
 
             # 2. 清理進程
             if self.process:

@@ -15,6 +15,9 @@
     <link rel="stylesheet" href="/static/css/prompt-management.css">
     <link rel="stylesheet" href="/static/css/audio-management.css">
     <link rel="stylesheet" href="/static/css/notification-settings.css">
+    {% if remote_settings_available %}
+    <link rel="stylesheet" href="/static/css/remote-settings.css">
+    {% endif %}
     <style>
         /* 僅保留必要的頁面特定樣式和響應式調整 */
 
@@ -450,6 +453,16 @@
             <span class="timeout-label" data-i18n="sessionTimeout.label">會話超時:</span>
             <span id="sessionTimeoutTimer" class="countdown-timer">--:--</span>
         </div>
+
+        {% if remote_settings_available %}
+        {# Remote communication status (feedback-cli windows only; a click opens the settings tab). #}
+        <span class="info-separator">·</span>
+        <button type="button" class="remote-status-badge" id="remoteStatusBadge" data-state="off">
+            <span class="remote-status-icon">📡</span>
+            {# The text is owned by remote-status-badge.js (status payload + language), not by data-i18n. #}
+            <span class="remote-status-text">遠端：未啟用</span>
+        </button>
+        {% endif %}
 
         <!-- 分隔符 -->
         <span class="info-separator">·</span>
@@ -1064,6 +1077,11 @@
                     </div>
                 </div>
 
+                {% if remote_settings_available %}
+                {# Remote communication settings card (feedback-cli windows only; the same component as on the standalone settings page). #}
+                {% include 'components/remote-settings-card.html' %}
+                {% endif %}
+
                 <!-- 重置設定卡片 -->
                 <div class="settings-card">
                     <div class="settings-card-header">
@@ -1211,6 +1229,13 @@
     <script src="/static/js/modules/settings-manager.js?v=2025010510"></script>
     <script src="/static/js/modules/ui-manager.js?v=2025010510"></script>
     <script src="/static/js/modules/textarea-height-manager.js?v=2025010510"></script>
+
+    {% if remote_settings_available %}
+    {# Remote communication modules (feedback-cli windows only; they must load before app.js). #}
+    <script src="/static/js/modules/remote/remote-common.js?v=2025010510"></script>
+    <script src="/static/js/modules/remote/remote-status-badge.js?v=2025010510"></script>
+    <script src="/static/js/modules/remote/remote-settings-card.js?v=2025010510"></script>
+    {% endif %}
 
     <!-- 主應用程式 -->
     <script src="/static/js/app.js?v=2025010510"></script>

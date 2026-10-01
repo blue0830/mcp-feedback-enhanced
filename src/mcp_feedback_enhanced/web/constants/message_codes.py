@@ -39,6 +39,8 @@ class MessageCodes:
     SESSION_TIMEOUT = "session.timeout"
     SESSION_CLEANED = "session.cleaned"
     SESSION_FEEDBACK_SUBMITTED = "session.feedbackSubmitted"
+    # Sent when a submission loses the first-success arbitration (another source won).
+    SESSION_FEEDBACK_CONFLICT = "session.feedbackConflict"
     SESSION_USER_MESSAGE_RECORDED = "session.userMessageRecorded"
     SESSION_HISTORY_SAVED = "session.historySaved"
     SESSION_HISTORY_LOADED = "session.historyLoaded"
