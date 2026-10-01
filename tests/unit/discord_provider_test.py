@@ -196,6 +196,20 @@ def test_title_uses_the_first_non_empty_summary_line():
     assert title == "[my-project] Heading line (#abcdef12)"
 
 
+@pytest.mark.parametrize(
+    ("summary", "expected"),
+    [
+        ("🔧 **Connection test**\n\nbody", "🔧 Connection test"),
+        ("**Done** the `parser` change", "Done the parser change"),
+        ("`code` first", "code first"),
+        ("> - *note*", "note"),
+    ],
+)
+def test_title_drops_markdown_that_thread_names_do_not_render(summary, expected):
+    title = build_title(make_request(summary=summary))
+    assert title == f"[my-project] {expected} (#abcdef12)"
+
+
 @pytest.mark.asyncio
 async def test_long_summary_is_truncated_in_the_embed_and_attached_in_full(fake):
     # A unique tail marker proves the cut without relying on a periodic filler pattern.

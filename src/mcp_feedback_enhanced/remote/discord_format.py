@@ -151,9 +151,14 @@ def _project_name(project_directory: str) -> str:
 
 
 def _first_line(summary: str) -> str:
-    """First non-empty line without Markdown decoration, whitespace collapsed."""
+    """First non-empty line without Markdown decoration, whitespace collapsed.
+
+    Thread names show no Markdown, so bold markers and code ticks are dropped anywhere in
+    the line, and heading, quote, list and emphasis marks at its ends.
+    """
     for line in summary.splitlines():
-        cleaned = re.sub(r"\s+", " ", line.strip().lstrip("#>*-` ").rstrip("`* "))
+        text = re.sub(r"\*\*|`", "", line).strip().lstrip("#>*- ").rstrip("* ")
+        cleaned = re.sub(r"\s+", " ", text)
         if cleaned:
             return cleaned
     return ""
